@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Video Galerie - ZeroVideo{% endblock %}
+
+{% block extra_css %}
+<link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+<style>
+    /* Styly galerie */
+    .video-card { transition: all 0.3s ease; background: #374151; border: 1px solid #4B5563; cursor: pointer; }
+    .video-card:hover { border-color: #10B981; }
+
+    /* MODAL KONTEJNER */
+    #video-modal {
+        display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.95); z-index: 2000;
+        flex-direction: column; justify-content: center; align-items: center;
+    }
+    #video-modal.open { display: flex; }
+
+    .player-container { width: 90%; max-width: 1000px; position: relative; }
+
+    /* VIDEO.JS ÚPRAVY */
+    .video-js { width: 100% !important; height: auto !important; aspect-ratio: 16/9; border-radius: 8px; }
+    
+    /* Vlastní panel pro Zoom a Rychlost */
+    .controls-overlay {
+        background: rgba(17, 24, 39, 0.8); padding: 15px; border-radius: 12px;
+        margin-top: 15px; width: 100%; border: 1px solid #374151;
+    }
+
+    .close-btn {
+        position: absolute; top: -50px; right: 0; color: white;
+        font-size: 30px; cursor: pointer; background: none; border: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 p-4">
+    {% for item in items %}
+    <div class="video-card rounded-lg overflow-hidden" onclick="openVideo('{{ item.id }}')">
+        <img src="{{ item.thumb_url }}" class="w-full h-32 object-cover">
+        <div class="p-2 text-xs text-center text-gray-300">{{ item.filename }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+<div id="video-modal">
+    <div class="player-container">
+        <button class="close-btn" onclick="closeVideo()">&times; Zavřít</button>
+        
+        <video id="my-video" class="video-js vjs-default-skin" controls preload="auto">
+            <p class="vjs-no-js">Prohlížeč nepodporuje JS.</p>
+        </video>
+
+        <div class="controls-overlay grid grid-cols-2 gap-4">
+            <div class="flex items-center space-x-2">
+                <span class="text-white text-xs">Rychlost:</span>
+                <input type="range" id="speed-range" min="0.5" max="3" step="0.1" value="1" class="flex-grow">
+                <span id="speed-txt" class="text-sky-400 font-mono text-xs w-8">1.0x</span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <span class="text-white text-xs">Zoom:</span>
+                <input type="range" id="zoom-range" min="1" max="3" step="0.1" value="1" class="flex-grow">
+                <span id="zoom-txt" class="text-emerald-400 font-mono text-xs w-8">1.0x</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+<script>
+    // Inicializace Video.js s plnou lištou
+    const player = videojs('my-video', {
+        fluid: true,
+        controls: true,
+        playbackRates: [0.5, 1, 1.5, 2],
+        controlBar: {
+            children: [
+                'playToggle',          // Play/Pause
+                'progressControl',     // Časová osa (posun)
+                'volumePanel',         // Zvuk + Mute
+                'currentTimeDisplay',
+                'durationDisplay',
+                'fullscreenToggle'
+            ]
+        }
+    });
+
+    const modal = document.getElementById('video-modal');
+    const zoomInp = document.getElementById('zoom-range');
+    const speedInp = document.getElementById('speed-range');
+
+    async function openVideo(id) {
+        const res = await fetch(`/api/video-data/${id}`);
+        const data = await res.json();
+        
+        player.src({ type: 'video/mp4', src: data.video_url });
+        modal.classList.add('open');
+        player.ready(() => {
+            player.play();
+            // Reset zoomu a rychlosti při novém videu
+            zoomInp.value = 1; speedInp.value = 1;
+            updateZoom(1); updateSpeed(1);
+        });
+    }
+
+    function closeVideo() {
+        modal.classList.remove('open');
+        player.pause();
+    }
+
+    // Zoom ovládání (cílí na vnitřní video tag)
+    function updateZoom(val) {
+        document.getElementById('zoom-txt').innerText = val + 'x';
+        const videoTag = document.querySelector('#my-video_html5_api');
+        if(videoTag) videoTag.style.transform = `scale(${val})`;
+    }
+
+    // Rychlost ovládání
+    function updateSpeed(val) {
+        document.getElementById('speed-txt').innerText = val + 'x';
+        player.playbackRate(val);
+    }
+
+    zoomInp.oninput = (e) => updateZoom(e.target.value);
+    speedInp.oninput = (e) => updateSpeed(e.target.value);
+
+    // Zavření Escapem
+    window.onkeydown = (e) => { if(e.key === 'Escape') closeVideo(); };
+</script>
+{% endblock %}

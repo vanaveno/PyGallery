@@ -1,0 +1,11 @@
+services:
+  gallery:
+    build: .                 # Říká Dockeru, aby vytvořil obraz z tvého Dockerfile
+    container_name: gallery
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - /mnt/120gb/projects/gallery:/app
+      - /mnt/120gb/projects/gallery/movie:/app/movie
+      - /mnt/120gb/projects/gallery/movie/thumbnails:/app/movie/thumbnails

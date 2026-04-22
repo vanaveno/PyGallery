@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+
+{% block title %}Video Galerie - ZeroVideo{% endblock %}
+
+{% block extra_css %}
+<link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+<style>
+    .video-card {
+        transition: all 0.3s ease;
+        background: linear-gradient(145deg, #374151, #4B5563);
+        border: 1px solid #4B5563;
+    }
+    .video-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+        border-color: #10B981;
+    }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    #video-modal { background-color: rgba(0, 0, 0, 0.95); }
+    
+    .vjs-tech {
+        transition: transform 0.1s ease-out;
+        cursor: grab;
+    }
+    .vjs-tech:active { cursor: grabbing; }
+
+    .video-js {
+        width: 100% !important;
+        height: 100% !important;
+        background-color: #000;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold mb-2">Video Galerie</h1>
+            <p class="text-gray-400">{{ items|length }} videí | {{ "%.2f"|format(total_size_gb) }} GB</p>
+        </div>
+        <div class="flex space-x-2">
+            <button onclick="syncGallery()" class="bg-violet-500 hover:bg-violet-700 text-white px-4 py-2 rounded-lg flex items-center transition-colors">
+                <i class="fa-solid fa-repeat mr-2"></i> Synchronizovat FTP
+            </button>
+            <button onclick="toggleUploadPopup()" class="bg-sky-500 hover:bg-sky-700 text-white px-4 py-2 rounded-lg flex items-center transition-colors">
+                <i class="fas fa-upload mr-2"></i> Nahrát Video
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+    {% for item in items %}
+    <div class="video-card rounded-xl overflow-hidden">
+        <div class="relative">
+            <div class="absolute top-2 right-2 flex space-x-1 z-10">
+                <button onclick="deleteVideo('{{ item.filename }}')" class="w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center font-bold hover:bg-red-600 transition-colors">×</button>
+                <button onclick="regenerateThumbnail('{{ item.filename }}', '{{ item.id }}')" class="w-7 h-7 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold hover:bg-blue-600 transition-colors" id="regenerate-btn-{{ item.id }}">⟳</button>
+            </div>
+            
+            <div class="relative group">
+                <img src="{{ item.thumb_url }}?{{ range(1, 10000) | random }}" alt="{{ item.name }}" class="w-full h-48 object-cover cursor-pointer" id="thumb-{{ item.id }}">
+                <div class="absolute inset-0 bg-black bg-opacity-50 hidden items-center justify-center" id="loading-{{ item.id }}">
+                    <i class="fas fa-spinner spin text-white text-2xl"></i>
+                </div>
+                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div onclick="openVideoModal('{{ item.id }}')" class="bg-black/50 rounded-full p-4 cursor-pointer">
+                        <i class="fas fa-play text-white text-2xl"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div id="video-modal" class="fixed inset-0 z-[2000] hidden flex flex-col items-center justify-center p-4">
+    <button onclick="closeVideoModal()" class="absolute top-5 right-5 text-white text-4xl hover:text-red-500 z-[2001] transition-colors">&times;</button>
+    <div class="relative w-full max-w-5xl aspect-video bg-black rounded-xl overflow-hidden shadow-2xl">
+        <video id="vjs-player" class="video-js vjs-default-skin vjs-big-play-centered" controls preload="auto">
+            <p class="vjs-no-js">Povolte JavaScript.</p>
+        </video>
+        <div class="absolute bottom-12 left-0 right-0 p-4 bg-gradient-to-t from-black/90 to-transparent opacity-0 hover:opacity-100 transition-opacity z-[2002]">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-900/80 p-4 rounded-xl backdrop-blur-md border border-white/10">
+                <div class="flex items-center space-x-3">
+                    <i class="fas fa-gauge-high text-sky-400"></i>
+                    <input type="range" id="speed-control" min="0.5" max="3.0" step="0.1" value="1" class="flex-grow accent-sky-500" oninput="updateSpeed(this.value)">
+                    <span id="speed-val" class="text-white text-xs min-w-[35px]">1.0x</span>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <i class="fas fa-magnifying-glass-plus text-emerald-400"></i>
+                    <input type="range" id="zoom-control" min="1" max="5" step="0.1" value="1" class="flex-grow accent-emerald-500" oninput="updateZoom(this.value)">
+                    <span id="zoom-val" class="text-white text-xs min-w-[35px]">1.0x</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="uploadPopup" class="fixed inset-0 z-[3000] hidden bg-black/60 backdrop-blur-sm items-center justify-center p-4">
+    <div class="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700 shadow-2xl">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-bold text-white flex items-center">
+                <i class="fas fa-upload mr-3 text-sky-500"></i> Nahrát Video
+            </h3>
+            <button onclick="toggleUploadPopup()" class="text-gray-400 hover:text-white"><i class="fas fa-times text-xl"></i></button>
+        </div>
+        <form id="uploadForm" class="space-y-5">
+            <div class="space-y-2">
+                <label class="block text-gray-300 text-sm font-medium">Soubor videa</label>
+                <input type="file" name="video" accept="video/*" required 
+                       class="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm file:bg-sky-600 file:text-white file:border-0 file:rounded file:mr-4 file:px-3 file:py-1 hover:file:bg-sky-500">
+            </div>
+            <div class="flex justify-end gap-3 pt-4">
+                <button type="button" onclick="toggleUploadPopup()" class="px-5 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors text-sm">Zrušit</button>
+                <button type="submit" id="submitBtn" class="px-5 py-2 bg-sky-500 text-white rounded-lg hover:bg-sky-600 transition-colors flex items-center text-sm font-bold">
+                    <span id="uploadText">Nahrát</span>
+                    <i id="uploadSpinner" class="fas fa-spinner fa-spin ml-2 hidden"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+<script>
+    // --- POMOCNÉ FUNKCE ---
+    function toggleUploadPopup() {
+        const popup = document.getElementById('uploadPopup');
+        if (popup.classList.contains('hidden')) {
+            popup.classList.replace('hidden', 'flex');
+            document.body.style.overflow = 'hidden';
+        } else {
+            popup.classList.replace('flex', 'hidden');
+            document.body.style.overflow = 'auto';
+        }
+    }
+
+    // --- UPLOAD LOGIKA (FETCH) ---
+    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        const uploadBtn = document.getElementById('uploadText');
+        const spinner = document.getElementById('uploadSpinner');
+        const submitBtn = document.getElementById('submitBtn');
+        
+        uploadBtn.textContent = 'Nahrávám...';
+        spinner.classList.remove('hidden');
+        submitBtn.disabled = true;
+        
+        try {
+            // POZOR: Pokud máš v FastAPI prefix /api, změň na /api/upload
+            const response = await fetch('/api/movies/upload', { method: 'POST', body: formData });
+            const result = await response.json();
+            
+            if (response.ok) {
+                toggleUploadPopup();
+                window.location.reload();
+            } else {
+                alert("Chyba: " + (result.detail || "Neznámá chyba"));
+            }
+        } catch (error) {
+            alert("Nepodařilo se spojit se serverem.");
+        } finally {
+            uploadBtn.textContent = 'Nahrát';
+            spinner.classList.add('hidden');
+            submitBtn.disabled = false;
+        }
+    });
+
+    // --- VIDEO PLAYER (VIDEO.JS) ---
+    const player = videojs('vjs-player', {
+        fluid: true,
+        playbackRates: [0.5, 1, 1.5, 2, 3],
+        controlBar: { children: ['playToggle', 'volumePanel', 'progressControl', 'currentTimeDisplay', 'timeDivider', 'durationDisplay', 'fullscreenToggle'] }
+    });
+
+    let isDragging = false, startX, startY, translateX = 0, translateY = 0;
+    const modal = document.getElementById('video-modal');
+
+    function updateTransforms() {
+        const zoom = document.getElementById('zoom-control').value;
+        const vjsTech = document.querySelector('.vjs-tech');
+        if (vjsTech) vjsTech.style.transform = `scale(${zoom}) translate(${translateX}px, ${translateY}px)`;
+    }
+
+    function resetTransforms() {
+        translateX = 0; translateY = 0;
+        document.getElementById('zoom-control').value = 1;
+        document.getElementById('speed-control').value = 1;
+        document.getElementById('zoom-val').textContent = "1.0x";
+        document.getElementById('speed-val').textContent = "1.0x";
+        player.playbackRate(1.0);
+        updateTransforms();
+    }
+
+    function updateZoom(val) {
+        document.getElementById('zoom-val').textContent = parseFloat(val).toFixed(1) + 'x';
+        if (parseFloat(val) === 1) { translateX = 0; translateY = 0; }
+        updateTransforms();
+    }
+
+    function updateSpeed(val) {
+        player.playbackRate(parseFloat(val));
+        document.getElementById('speed-val').textContent = parseFloat(val).toFixed(1) + 'x';
+    }
+
+    player.ready(() => {
+        const el = player.tech().el();
+        el.addEventListener('mousedown', (e) => {
+            if (document.getElementById('zoom-control').value > 1) {
+                isDragging = true; startX = e.clientX - translateX; startY = e.clientY - translateY;
+            }
+        });
+        el.addEventListener('dblclick', resetTransforms);
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        translateX = e.clientX - startX; translateY = e.clientY - startY;
+        updateTransforms();
+    });
+    window.addEventListener('mouseup', () => isDragging = false);
+
+    async function openVideoModal(id) {
+        try {
+            const res = await fetch(`/api/video-data/${id}`);
+            const data = await res.json();
+            player.src({ type: 'video/mp4', src: data.video_url });
+            modal.classList.remove('hidden');
+            resetTransforms();
+            player.play();
+        } catch (e) { alert("Chyba při načítání videa."); }
+    }
+
+    function closeVideoModal() { modal.classList.add('hidden'); player.pause(); }
+
+    window.addEventListener('keydown', (e) => {
+        if (modal.classList.contains('hidden')) return;
+        if (e.code === 'Space') { e.preventDefault(); player.paused() ? player.play() : player.pause(); }
+        if (e.key === 'Escape') closeVideoModal();
+    });
+
+    // --- OSTATNÍ FUNKCE (DELETE, SYNC, THUMB) ---
+    async function deleteVideo(filename) {
+        if (!confirm(`Smazat video ${filename}?`)) return;
+        const res = await fetch(`/delete/${filename}`, { method: 'POST' });
+        if (res.ok) window.location.reload();
+    }
+
+    async function regenerateThumbnail(filename, id) {
+        const btn = document.getElementById(`regenerate-btn-${id}`);
+        const thumbImg = document.getElementById(`thumb-${id}`);
+        btn.classList.add('spin');
+        const res = await fetch(`/regenerate/${filename}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success') thumbImg.src = `/${data.thumbnail}?t=${Date.now()}`;
+        btn.classList.remove('spin');
+    }
+
+    async function syncGallery() {
+        const btn = event.currentTarget;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner spin mr-2"></i>';
+        let remaining = 1;
+        while (remaining > 0) {
+            const res = await fetch('/sync', { method: 'POST' });
+            const data = await res.json();
+            remaining = data.remaining || 0;
+            if (remaining === 0) window.location.reload();
+        }
+    }
+</script>
+{% endblock %}

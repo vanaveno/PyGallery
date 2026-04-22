@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+
+{% block title %}Foto Galerie - ZeroVideo{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Masonry layout */
+    .masonry-grid {
+        column-count: 4;
+        column-gap: 1.5rem;
+    }
+    
+    @media (max-width: 1280px) {
+        .masonry-grid {
+            column-count: 3;
+        }
+    }
+    
+    @media (max-width: 1024px) {
+        .masonry-grid {
+            column-count: 2;
+        }
+    }
+    
+    @media (max-width: 640px) {
+        .masonry-grid {
+            column-count: 1;
+        }
+    }
+    
+    .masonry-item {
+        break-inside: avoid;
+        margin-bottom: 1.5rem;
+    }
+    
+    /* Plné náhledy - zachování poměru stran */
+    .album-image {
+        width: 100%;
+        height: auto;
+        display: block;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold mb-2">Foto Alba</h1>
+            <p class="text-gray-400">{{ albums|length }} alb | {{ "%.1f"|format(total_size_gb) }} GB | {{ "%.1f"|format(free_space_gb) }} GB volno</p>
+        </div>
+        <button onclick="syncPics()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors">
+    🔄 Synchronizovat FTP Alba
+</button>
+        <button onclick="openUploadModal()" class="bg-sky-500 hover:bg-sky-700 text-white px-4 py-2 rounded-lg flex items-center transition-colors">
+            <i class="fas fa-upload mr-2"></i> Nahrát Album
+        </button>
+    </div>
+</div>
+
+<!-- Masonry Grid -->
+<div class="masonry-grid">
+    {% for album in albums %}
+    <div class="masonry-item">
+        <div class="media-card rounded-xl overflow-hidden group hover:shadow-2xl transition-all duration-300">
+            <a href="/album/{{ album.name }}" class="block">
+                <!-- Celý náhled bez oříznutí -->
+                <div class="relative overflow-hidden">
+                    <img src="{{ album.preview }}" 
+                         alt="{{ album.name }} preview" 
+                         class="album-image group-hover:scale-105 transition duration-500 ease-in-out">
+                    
+                    <!-- Overlay s informacemi - zobrazí se při najetí -->
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <!-- Název alba - střed -->
+                        <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center w-full px-4">
+                            <h3 class="text-white font-bold text-xl mb-2 drop-shadow-lg">{{ album.name }}</h3>
+                            <div class="text-white/90 text-sm bg-black/40 rounded-full px-3 py-1 inline-block">
+                                <i class="fas fa-images mr-1"></i>{{ album.count }} fotek
+                            </div>
+                        </div>
+                        
+                        <!-- Počet fotek - roh -->
+                        <div class="absolute top-3 right-3">
+                            <span class="bg-black/70 text-white text-xs px-2 py-1 rounded-full">
+                                {{ album.count }}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <!-- Základní informace - vždy viditelné -->
+                    <div class="absolute bottom-3 left-3">
+                        <span class="bg-black/60 text-white text-sm px-2 py-1 rounded">
+                            {{ album.count }} fotek
+                        </span>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if not albums %}
+<div class="text-center py-16">
+    <i class="fas fa-images text-8xl text-gray-600 mb-4"></i>
+    <p class="text-gray-400 text-xl">Zatím žádná alba</p>
+    <p class="text-gray-500 mt-2">Vytvořte své první album pomocí tlačítka "Nahrát Album"</p>
+</div>
+{% endif %}
+
+<!-- Upload Modal -->
+<div id="uploadModal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center">
+    <div class="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4 border border-gray-700">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold">Nahrát Nové Album</h3>
+            <button onclick="closeUploadModal()" class="text-gray-400 hover:text-white">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="mb-4">
+                <label class="block text-gray-300 mb-2">ZIP soubor s albem</label>
+                <input type="file" name="zip_file" accept=".zip" 
+                       class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+            </div>
+            <div class="flex justify-end gap-2">
+                <button type="button" onclick="closeUploadModal()" 
+                        class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition-colors">
+                    Zrušit
+                </button>
+                <button type="submit" 
+                        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+                    <span id="uploadText">Nahrát</span>
+                    <i id="uploadSpinner" class="fas fa-spinner fa-spin ml-2 hidden"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Modal functions
+    function openUploadModal() {
+        document.getElementById('uploadModal').classList.remove('hidden');
+        document.getElementById('uploadModal').classList.add('flex');
+    }
+    
+    function closeUploadModal() {
+        document.getElementById('uploadModal').classList.add('hidden');
+        document.getElementById('uploadModal').classList.remove('flex');
+    }
+
+    // Album deletion
+    async function deleteAlbum(albumName, event) {
+        event.preventDefault();
+        event.stopPropagation();
+        
+        if (!confirm(`Smazat album "${albumName}"? Tuto akci nelze vrátit.`)) return;
+        
+        try {
+            const response = await fetch(`/api/pics/album/${albumName}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                showToast('Album úspěšně smazáno', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                throw new Error('Nepodařilo se smazat album');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            showToast('Chyba při mazání alba', 'error');
+        }
+    }
+
+    // Form submission
+    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        const uploadBtn = document.getElementById('uploadText');
+        const spinner = document.getElementById('uploadSpinner');
+        
+        uploadBtn.textContent = 'Nahrávání...';
+        spinner.classList.remove('hidden');
+        
+        try {
+            const response = await fetch('/api/pics/upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (response.ok) {
+                showToast('Album úspěšně nahráno', 'success');
+                closeUploadModal();
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                throw new Error(await response.text());
+            }
+        } catch (error) {
+            console.error('Upload error:', error);
+            showToast('Nepodařilo se nahrát album', 'error');
+        } finally {
+            uploadBtn.textContent = 'Nahrát';
+            spinner.classList.add('hidden');
+        }
+    });
+
+    // Toast notification
+    function showToast(message, type) {
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white ${
+            type === 'success' ? 'bg-green-500' : 'bg-red-500'
+        } animate-fade-in`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.classList.remove('animate-fade-in');
+            toast.classList.add('animate-fade-out');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    // Optimalizace Masonry layoutu - přidáme načítání obrázků
+    document.addEventListener('DOMContentLoaded', function() {
+        // Přidáme lazy loading pro lepší performance
+        const images = document.querySelectorAll('.album-image');
+        
+        const imageObserver = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const img = entry.target;
+                    img.src = img.src;
+                    imageObserver.unobserve(img);
+                }
+            });
+        });
+
+        images.forEach(img => imageObserver.observe(img));
+    });
+</script>
+<script>
+async function syncPics() {
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i> Synchronizuji...';
+
+    try {
+        const response = await fetch('/api/pics/sync', { method: 'POST' });
+        const data = await response.json();
+
+        if (response.ok) {
+            alert(`Synchronizace hotova! Přidáno ${data.stats.new_images} obrázků.`);
+            location.reload();
+        } else {
+            alert('Chyba při synchronizaci alb.');
+        }
+    } catch (error) {
+        alert('Server neodpovídá.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+}    
+</script>
+{% endblock %}
