@@ -1,5 +1,5 @@
 # pics_routes.py
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Form, Query
 from sqlalchemy.orm import Session
 from pathlib import Path
 from PIL import Image
@@ -33,13 +33,15 @@ def normalize_album_name(name: str) -> str:
     name = ''.join(c for c in name if c.isalnum() or c in ['_', '-'])
     return name.lower()
 
-def get_unique_album_name(base_name: str, db: Session) -> str:
-    counter = 1
-    new_name = base_name
-    while db.query(Pic).filter(Pic.album == new_name).first():
-        new_name = f"{base_name}_{counter}"
-        counter += 1
-    return new_name
+def should_process_file(file_info) -> bool:
+    if file_info.is_dir():
+        return False
+    file_ext = Path(file_info.filename).suffix.lower()
+    if file_ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return False
+    if Path(file_info.filename).name.startswith('.'):
+        return False
+    return True
 
 def convert_to_webp(image_data: bytes, max_size: tuple = None, quality: int = 85) -> bytes:
     try:
@@ -66,127 +68,156 @@ def create_thumbnail(image_data: bytes, size: tuple = (320, 240), quality: int =
     except Exception as e:
         raise Exception(f"Chyba vytváření náhledu: {str(e)}")
 
-def should_process_file(file_info) -> bool:
-    if file_info.is_dir():
-        return False
-    file_ext = Path(file_info.filename).suffix.lower()
-    if file_ext not in ALLOWED_IMAGE_EXTENSIONS:
-        return False
-    if Path(file_info.filename).name.startswith('.'):
-        return False
-    return True
-
 def select_random_thumbnail(thumbs_dir: Path) -> str:
     image_files = list(thumbs_dir.glob("*.webp"))
     if not image_files:
         return None
     return random.choice(image_files).name
 
-# Endpointy
+
+# --- ENDPOINT PRO RYCHLOU KONTROLU PŘED UPLOADEM ---
+@pics_routes.get("/check-exists")
+async def check_album_exists(album_name: str, db: Session = Depends(get_db)):
+    if not album_name:
+        return {"exists": False}
+        
+    normalized_name = normalize_album_name(album_name)
+    existing = db.query(Pic).filter(Pic.album == normalized_name).first()
+    
+    if existing:
+        return {
+            "exists": True, 
+            "detail": f"Album '{normalized_name}' už v databázi existuje! Upload byl zastaven."
+        }
+    return {"exists": False}
+
+
+# --- UPLOAD ENDPOINT PRO VÍCE SOUBORŮ ---
 @pics_routes.post("/upload")
 async def upload_pics(
-    zip_file: UploadFile = File(...),
-    album_name: str = Form(""),
+    zip_files: list[UploadFile] = File(...),
     db: Session = Depends(get_db)
 ):
-    stats = {
-        'total_files': 0,
-        'converted': 0,
-        'skipped': 0,
-        'errors': []
-    }
+    overall_stats = []
     
-    try:
-        if not album_name:
-            album_name = Path(zip_file.filename).stem
+    for zip_file in zip_files:
+        stats = {
+            'file_name': zip_file.filename,
+            'total_files': 0,
+            'converted': 0,
+            'skipped': 0,
+            'errors': []
+        }
         
-        final_album_name = get_unique_album_name(album_name, db)
+        album_name = Path(zip_file.filename).stem
+        final_album_name = normalize_album_name(album_name)
         
+        # 1. KONTROLA DUPLICITY
+        existing_check = db.query(Pic).filter(Pic.album == final_album_name).first()
+        if existing_check:
+            stats['errors'].append(f"Album '{final_album_name}' už existuje v DB! Tento ZIP byl přeskočen.")
+            overall_stats.append({"status": "skipped", "album_name": final_album_name, "stats": stats})
+            continue
+
         album_dir = PICS_DIR / final_album_name
         thumbs_dir = album_dir / "thumbs"
         
-        if album_dir.exists():
-            raise HTTPException(400, f"Složka alba již existuje: {final_album_name}")
+        album_dir_existed_before = album_dir.exists()
         
         album_dir.mkdir(parents=True, exist_ok=True)
         thumbs_dir.mkdir(exist_ok=True)
         
         temp_zip_path = album_dir / "temp_upload.zip"
-        with open(temp_zip_path, "wb") as buffer:
-            shutil.copyfileobj(zip_file.file, buffer)
+        created_files = []  
         
-        with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
-            for file_info in zip_ref.filelist:
-                if should_process_file(file_info):
-                    stats['total_files'] += 1
-                    original_filename = Path(file_info.filename).name
-                    
-                    try:
-                        file_data = zip_ref.read(file_info.filename)
+        try:
+            with open(temp_zip_path, "wb") as buffer:
+                shutil.copyfileobj(zip_file.file, buffer)
+            
+            with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
+                for file_info in zip_ref.filelist:
+                    if should_process_file(file_info):
+                        stats['total_files'] += 1
+                        original_filename = Path(file_info.filename).name
                         
-                        if not file_data:
+                        try:
+                            file_data = zip_ref.read(file_info.filename)
+                            if not file_data:
+                                stats['skipped'] += 1
+                                stats['errors'].append(f"{original_filename}: Prázdný soubor")
+                                continue
+                            
+                            webp_filename = Path(file_info.filename).stem + '.webp'
+                            
+                            webp_data = convert_to_webp(
+                                file_data, 
+                                max_size=WEBP_CONFIG['max_original_size'],
+                                quality=WEBP_CONFIG['original_quality']
+                            )
+                            
+                            thumb_data = create_thumbnail(
+                                file_data,
+                                size=WEBP_CONFIG['thumbnail_size'], 
+                                quality=WEBP_CONFIG['thumbnail_quality']
+                            )
+                            
+                            original_path = album_dir / webp_filename
+                            thumb_path = thumbs_dir / webp_filename
+                            
+                            with open(original_path, 'wb') as f:
+                                f.write(webp_data)
+                            created_files.append(original_path)
+                                
+                            with open(thumb_path, 'wb') as f:
+                                f.write(thumb_data)
+                            created_files.append(thumb_path)
+                            
+                            db_pic = Pic(
+                                album=final_album_name,
+                                filename=webp_filename,
+                                filepath=f"pics/{final_album_name}/{webp_filename}"
+                            )
+                            db.add(db_pic)
+                            stats['converted'] += 1
+                            
+                        except Exception as e:
                             stats['skipped'] += 1
-                            stats['errors'].append(f"{original_filename}: Prázdný soubor")
+                            stats['errors'].append(f"{original_filename}: {str(e)}")
                             continue
-                        
-                        webp_filename = Path(file_info.filename).stem + '.webp'
-                        
-                        webp_data = convert_to_webp(
-                            file_data, 
-                            max_size=WEBP_CONFIG['max_original_size'],
-                            quality=WEBP_CONFIG['original_quality']
-                        )
-                        
-                        thumb_data = create_thumbnail(
-                            file_data,
-                            size=WEBP_CONFIG['thumbnail_size'], 
-                            quality=WEBP_CONFIG['thumbnail_quality']
-                        )
-                        
-                        original_path = album_dir / webp_filename
-                        thumb_path = thumbs_dir / webp_filename
-                        
-                        with open(original_path, 'wb') as f:
-                            f.write(webp_data)
-                        with open(thumb_path, 'wb') as f:
-                            f.write(thumb_data)
-                        
-                        db_pic = Pic(
-                            album=final_album_name,
-                            filename=webp_filename,
-                            filepath=f"pics/{final_album_name}/{webp_filename}"
-                        )
-                        db.add(db_pic)
-                        
-                        stats['converted'] += 1
-                        
-                    except Exception as e:
-                        stats['skipped'] += 1
-                        stats['errors'].append(f"{original_filename}: {str(e)}")
-                        continue
-        
-        random_thumb_name = select_random_thumbnail(thumbs_dir)
-        thumbnail_url = f"/media/pics/{final_album_name}/thumbs/{random_thumb_name}" if random_thumb_name else None
-        
-        db.commit()
-        
-        if temp_zip_path.exists():
-            temp_zip_path.unlink()
-        
-        return {
-            "status": "success",
-            "album_name": final_album_name,
-            "thumbnail": thumbnail_url,
-            "stats": stats
-        }
-        
-    except zipfile.BadZipFile:
-        raise HTTPException(400, "Neplatný ZIP soubor")
-    except Exception as e:
-        db.rollback()
-        if 'album_dir' in locals() and album_dir.exists():
-            shutil.rmtree(album_dir)
-        raise HTTPException(500, f"Chyba při nahrávání: {str(e)}")
+            
+            random_thumb_name = select_random_thumbnail(thumbs_dir)
+            thumbnail_url = f"/media/pics/{final_album_name}/thumbs/{random_thumb_name}" if random_thumb_name else None
+            
+            db.commit()
+            overall_stats.append({
+                "status": "success",
+                "album_name": final_album_name,
+                "thumbnail": thumbnail_url,
+                "stats": stats
+            })
+            
+        except zipfile.BadZipFile:
+            stats['errors'].append("Neplatný nebo poškozený ZIP soubor")
+            overall_stats.append({"status": "failed", "album_name": final_album_name, "stats": stats})
+            if not album_dir_existed_before and album_dir.exists():
+                shutil.rmtree(album_dir)
+        except Exception as e:
+            db.rollback()
+            for f_path in created_files:
+                if f_path.exists():
+                    f_path.unlink()
+            if not album_dir_existed_before and album_dir.exists():
+                remaining = [p for p in album_dir.iterdir() if p.name != "thumbs" and p.name != "temp_upload.zip"]
+                if not remaining:
+                    shutil.rmtree(album_dir)
+                    
+            stats['errors'].append(f"Kritická chyba: {str(e)}")
+            overall_stats.append({"status": "failed", "album_name": final_album_name, "stats": stats})
+        finally:
+            if temp_zip_path.exists():
+                temp_zip_path.unlink()
+                
+    return {"status": "finished", "results": overall_stats}
 
 @pics_routes.delete("/album/{album_name}")
 async def delete_album(album_name: str, db: Session = Depends(get_db)):
@@ -205,16 +236,11 @@ async def delete_album(album_name: str, db: Session = Depends(get_db)):
 
 @pics_routes.post("/sync")
 async def sync_pics(db: Session = Depends(get_db)):
-    """
-    Prohledá složku 'pics', najde rozbalené složky (alba) z FTP,
-    zpracuje nové obrázky a přidá je do DB.
-    """
     stats = {'new_albums': 0, 'new_images': 0, 'errors': []}
     
     if not PICS_DIR.exists():
         PICS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Procházíme složky v pics/ (každá složka = album)
     for album_path in PICS_DIR.iterdir():
         if not album_path.is_dir():
             continue
@@ -223,12 +249,10 @@ async def sync_pics(db: Session = Depends(get_db)):
         thumbs_dir = album_path / "thumbs"
         thumbs_dir.mkdir(exist_ok=True)
 
-        # Najdeme všechny obrázky v albu (mimo složku thumbs)
         for img_path in album_path.iterdir():
             if not img_path.is_file() or img_path.suffix.lower() not in ALLOWED_IMAGE_EXTENSIONS:
                 continue
 
-            # Kontrola, zda už obrázek v DB je
             existing = db.query(Pic).filter(
                 Pic.album == album_name, 
                 Pic.filename == img_path.name
@@ -238,12 +262,9 @@ async def sync_pics(db: Session = Depends(get_db)):
                 continue
 
             try:
-                # Načteme data obrázku
                 with open(img_path, "rb") as f:
                     file_data = f.read()
 
-                # Pokud je to původní formát (ne webp), zkonvertujeme ho pro galerii
-                # (Volitelné: Pokud chcete nechat původní soubory, tento krok přeskočte)
                 if img_path.suffix.lower() != '.webp':
                     webp_data = convert_to_webp(
                         file_data, 
@@ -256,13 +277,11 @@ async def sync_pics(db: Session = Depends(get_db)):
                     with open(new_img_path, "wb") as f:
                         f.write(webp_data)
                     
-                    # Smažeme původní (jpg/png), aby tam nezůstávaly duplikáty
                     img_path.unlink()
                     current_filename = webp_name
                 else:
                     current_filename = img_path.name
 
-                # Vytvoření náhledu, pokud neexistuje
                 thumb_path = thumbs_dir / current_filename
                 if not thumb_path.exists():
                     thumb_data = create_thumbnail(
@@ -273,7 +292,6 @@ async def sync_pics(db: Session = Depends(get_db)):
                     with open(thumb_path, "wb") as f:
                         f.write(thumb_data)
 
-                # Zápis do DB
                 db_pic = Pic(
                     album=album_name,
                     filename=current_filename,
@@ -286,4 +304,55 @@ async def sync_pics(db: Session = Depends(get_db)):
                 stats['errors'].append(f"Chyba {img_path.name}: {str(e)}")
 
     db.commit()
-    return {"status": "success", "stats": stats}    
+    return {"status": "success", "stats": stats}
+
+@pics_routes.get("/albums")
+async def get_paginated_albums(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    distinct_albums = db.query(Pic.album).distinct().all()
+    all_album_names = [a[0] for a in distinct_albums]
+    total_albums = len(all_album_names)
+
+    albums_with_mtime = []
+    for name in all_album_names:
+        album_dir = PICS_DIR / name
+        mtime = album_dir.stat().st_mtime if album_dir.exists() else 0
+        albums_with_mtime.append((name, mtime))
+
+    albums_with_mtime.sort(key=lambda x: x[1], reverse=True)
+
+    top_count = 4
+    newest = [a[0] for a in albums_with_mtime[:top_count]]
+    rest = [a[0] for a in albums_with_mtime[top_count:]]
+    
+    ordered_album_names = newest + rest
+
+    offset = (page - 1) * limit
+    paged_names = ordered_album_names[offset:offset + limit]
+
+    albums_data = []
+    for album_name in paged_names:
+        count = db.query(Pic).filter(Pic.album == album_name).count()
+        
+        album_dir = PICS_DIR / album_name
+        thumbs_dir = album_dir / "thumbs"
+        
+        random_thumb = select_random_thumbnail(thumbs_dir) if thumbs_dir.exists() else None
+        thumb_url = f"/media/pics/{album_name}/thumbs/{random_thumb}" if random_thumb else None
+
+        albums_data.append({
+            "name": album_name,
+            "preview": thumb_url,
+            "count": count
+        })
+
+    has_more = (offset + limit) < total_albums
+
+    return {
+        "albums": albums_data,
+        "has_more": has_more,
+        "total": total_albums
+    }

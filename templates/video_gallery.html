@@ -20,16 +20,66 @@
 
     #video-modal { background-color: rgba(0, 0, 0, 0.95); }
     
-    .vjs-tech {
-        transition: transform 0.1s ease-out;
-        cursor: grab;
+    /* Kontejner bez oříznutí - video může přetékat až za okraj obrazovky */
+    .player-container {
+        width: 100%;
+        position: relative;
+        background: #000;
     }
-    .vjs-tech:active { cursor: grabbing; }
+
+    .vjs-tech {
+        transform-origin: center center !important;
+        transition: transform 0.05s ease-out;
+    }
 
     .video-js {
         width: 100% !important;
-        height: 100% !important;
+        height: auto !important;
+        aspect-ratio: 16/9;
         background-color: #000;
+    }
+
+    /* Celkový layout bez overflow: hidden */
+    .modal-layout {
+        width: 100%;
+        max-width: 1000px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    /* Čistá lišta rychlosti umístěná běžně NAD videem */
+
+
+    .btn-circle-sm {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #4B5563;
+        color: white;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-weight: bold;
+        font-size: 18px;
+        border: none;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    .btn-circle-sm:hover { background: #10B981; }
+    .btn-circle-sm:active { background: #059669; }
+
+    .close-btn {
+        position: absolute; top: -50px; right: 0; color: rgba(255, 255, 255, 0.7);
+        font-size: 32px; cursor: pointer; background: rgba(0,0,0,0.6); border: none;
+        width: 44px; height: 44px; border-radius: 50%; z-index: 2100;
+        display: flex; justify-content: center; align-items: center;
+    }
+    .close-btn:hover { color: white; background: rgba(0,0,0,0.9); }
+    
+    @media (max-width: 768px) {
+        .close-btn { top: -45px; right: 5px; width: 36px; height: 36px; font-size: 24px; }
     }
 </style>
 {% endblock %}
@@ -38,14 +88,14 @@
 <div class="mb-8">
     <div class="flex justify-between items-center">
         <div>
-            <h1 class="text-3xl font-bold mb-2">Video Galerie</h1>
+            <h1 class="text-xl font-bold mb-2">Video</h1>
             <p class="text-gray-400">{{ items|length }} videí | {{ "%.2f"|format(total_size_gb) }} GB</p>
         </div>
         <div class="flex space-x-2">
-            <button onclick="syncGallery()" class="bg-violet-500 hover:bg-violet-700 text-white px-4 py-2 rounded-lg flex items-center transition-colors">
+            <button onclick="syncGallery()" class="hidden bg-violet-500 hover:bg-violet-700 text-white px-4 py-2 rounded-lg flex items-center transition-colors">
                 <i class="fa-solid fa-repeat mr-2"></i> Synchronizovat FTP
             </button>
-            <button onclick="toggleUploadPopup()" class="bg-sky-500 hover:bg-sky-700 text-white px-4 py-2 rounded-lg flex items-center transition-colors">
+            <button onclick="toggleUploadPopup()" class="bg-sky-500 hover:bg-sky-700 text-white px-4 py-2 rounded-lg lg:flex hidden items-center transition-colors">
                 <i class="fas fa-upload mr-2"></i> Nahrát Video
             </button>
         </div>
@@ -54,22 +104,20 @@
 
 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
     {% for item in items %}
-    <div class="video-card rounded-xl overflow-hidden">
-        <div class="relative">
-            <div class="absolute top-2 right-2 flex space-x-1 z-10">
-                <button onclick="deleteVideo('{{ item.filename }}')" class="w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center font-bold hover:bg-red-600 transition-colors">×</button>
-                <button onclick="regenerateThumbnail('{{ item.filename }}', '{{ item.id }}')" class="w-7 h-7 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold hover:bg-blue-600 transition-colors" id="regenerate-btn-{{ item.id }}">⟳</button>
+    <div class="video-card rounded-xl overflow-hidden group relative">
+        <div class="absolute top-2 right-2 z-20 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300 hidden md:flex">
+            <button onclick="deleteVideo('{{ item.filename }}')" class="w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center font-bold hover:bg-red-600 transition-colors">×</button>
+            <button onclick="regenerateThumbnail('{{ item.filename }}', '{{ item.id }}')" class="w-7 h-7 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold hover:bg-blue-600 transition-colors" id="regenerate-btn-{{ item.id }}">⟳</button>
+        </div>
+        
+        <div class="relative group">
+            <img src="{{ item.thumb_url }}?{{ range(1, 10000) | random }}" alt="{{ item.name }}" class="w-full h-48 object-cover cursor-pointer" id="thumb-{{ item.id }}">
+            <div class="absolute inset-0 bg-black bg-opacity-50 hidden items-center justify-center" id="loading-{{ item.id }}">
+                <i class="fas fa-spinner spin text-white text-2xl"></i>
             </div>
-            
-            <div class="relative group">
-                <img src="{{ item.thumb_url }}?{{ range(1, 10000) | random }}" alt="{{ item.name }}" class="w-full h-48 object-cover cursor-pointer" id="thumb-{{ item.id }}">
-                <div class="absolute inset-0 bg-black bg-opacity-50 hidden items-center justify-center" id="loading-{{ item.id }}">
-                    <i class="fas fa-spinner spin text-white text-2xl"></i>
-                </div>
-                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div onclick="openVideoModal('{{ item.id }}')" class="bg-black/50 rounded-full p-4 cursor-pointer">
-                        <i class="fas fa-play text-white text-2xl"></i>
-                    </div>
+            <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <div onclick="openVideoModal('{{ item.id }}')" class="bg-black/50 rounded-full p-4 cursor-pointer">
+                    <i class="fas fa-play text-white text-2xl"></i>
                 </div>
             </div>
         </div>
@@ -77,25 +125,27 @@
     {% endfor %}
 </div>
 
-<div id="video-modal" class="fixed inset-0 z-[2000] hidden flex flex-col items-center justify-center p-4">
-    <button onclick="closeVideoModal()" class="absolute top-5 right-5 text-white text-4xl hover:text-red-500 z-[2001] transition-colors">&times;</button>
-    <div class="relative w-full max-w-5xl aspect-video bg-black rounded-xl overflow-hidden shadow-2xl">
-        <video id="vjs-player" class="video-js vjs-default-skin vjs-big-play-centered" controls preload="auto">
-            <p class="vjs-no-js">Povolte JavaScript.</p>
-        </video>
-        <div class="absolute bottom-12 left-0 right-0 p-4 bg-gradient-to-t from-black/90 to-transparent opacity-0 hover:opacity-100 transition-opacity z-[2002]">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-900/80 p-4 rounded-xl backdrop-blur-md border border-white/10">
-                <div class="flex items-center space-x-3">
-                    <i class="fas fa-gauge-high text-sky-400"></i>
-                    <input type="range" id="speed-control" min="0.5" max="3.0" step="0.1" value="1" class="flex-grow accent-sky-500" oninput="updateSpeed(this.value)">
-                    <span id="speed-val" class="text-white text-xs min-w-[35px]">1.0x</span>
-                </div>
-                <div class="flex items-center space-x-3">
-                    <i class="fas fa-magnifying-glass-plus text-emerald-400"></i>
-                    <input type="range" id="zoom-control" min="1" max="5" step="0.1" value="1" class="flex-grow accent-emerald-500" oninput="updateZoom(this.value)">
-                    <span id="zoom-val" class="text-white text-xs min-w-[35px]">1.0x</span>
-                </div>
-            </div>
+<div id="video-modal" class="fixed inset-0 z-[2000] hidden flex-col items-center justify-center p-4">
+    
+    <div class="modal-layout ">
+        <button onclick="closeVideoModal()" class="close-btn">&times;</button>
+        
+
+        <div class="player-container rounded-xl overflow-visible" id="zoom-area">
+            <video id="vjs-player" class="video-js vjs-default-skin vjs-big-play-centered rounded-xl" controls preload="auto">
+                <p class="vjs-no-js">Povolte JavaScript.</p>
+            </video>
+        </div>
+        <div class="flex items-end ">
+        <div class="flex items-center space-x-2">
+            <button class="" onclick="stepSpeed(-1)">-</button>
+            <span id="speed-val" class="text-sky-400 font-mono text-sm w-8 text-center font-bold">1.0x</span>
+            <button class="btn btn-circle btn-xs" onclick="stepSpeed(1)">+</button>
+        </div>
+        <div class="p-2 flex justify-between items-center text-gray-500 text-xs">
+           
+            <span id="zoom-val" class="text-emerald-400 font-mono border border-emerald-500/30 px-2 py-0.5 rounded bg-emerald-500/10">Zoom: 1.00x</span>
+        </div>
         </div>
     </div>
 </div>
@@ -111,8 +161,18 @@
         <form id="uploadForm" class="space-y-5">
             <div class="space-y-2">
                 <label class="block text-gray-300 text-sm font-medium">Soubor videa</label>
-                <input type="file" name="video" accept="video/*" required 
+                <input type="file" name="video" id="videoFile" accept="video/*" required 
                        class="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm file:bg-sky-600 file:text-white file:border-0 file:rounded file:mr-4 file:px-3 file:py-1 hover:file:bg-sky-500">
+                <div id="progressContainer" class="hidden space-y-2 pt-2">
+                    <div class="flex justify-between text-xs text-gray-400 font-medium">
+                        <span id="progressPercent">0%</span>
+                        <span id="progressEta">Zbývá: --:--</span>
+                    </div>
+                    <div class="w-full bg-gray-950 rounded-full h-2.5 overflow-hidden border border-gray-700">
+                        <div id="progressBar" class="bg-gradient-to-r from-sky-500 to-indigo-500 h-2.5 rounded-full transition-all duration-300 easy-out" style="width: 0%"></div>
+                    </div>
+                    <div id="progressSpeed" class="text-right text-[10px] text-gray-500">0 KB/s</div>
+                </div>
             </div>
             <div class="flex justify-end gap-3 pt-4">
                 <button type="button" onclick="toggleUploadPopup()" class="px-5 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors text-sm">Zrušit</button>
@@ -128,8 +188,8 @@
 
 {% block scripts %}
 <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
 <script>
-    // --- POMOCNÉ FUNKCE ---
     function toggleUploadPopup() {
         const popup = document.getElementById('uploadPopup');
         if (popup.classList.contains('hidden')) {
@@ -140,83 +200,103 @@
             document.body.style.overflow = 'auto';
         }
     }
-
-    // --- UPLOAD LOGIKA (FETCH) ---
-    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const formData = new FormData(this);
-        const uploadBtn = document.getElementById('uploadText');
-        const spinner = document.getElementById('uploadSpinner');
-        const submitBtn = document.getElementById('submitBtn');
-        
-        uploadBtn.textContent = 'Nahrávám...';
-        spinner.classList.remove('hidden');
-        submitBtn.disabled = true;
-        
-        try {
-            // POZOR: Pokud máš v FastAPI prefix /api, změň na /api/upload
-            const response = await fetch('/api/movies/upload', { method: 'POST', body: formData });
-            const result = await response.json();
-            
-            if (response.ok) {
-                toggleUploadPopup();
-                window.location.reload();
-            } else {
-                alert("Chyba: " + (result.detail || "Neznámá chyba"));
-            }
-        } catch (error) {
-            alert("Nepodařilo se spojit se serverem.");
-        } finally {
-            uploadBtn.textContent = 'Nahrát';
-            spinner.classList.add('hidden');
-            submitBtn.disabled = false;
+    
+    const playSuccessSound = () => {
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/1110/1110-preview.mp3');
+        audio.volume = 0.3;
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(error => console.log("Prohlížeč zablokoval zvuk:", error));
         }
-    });
+    };
 
-    // --- VIDEO PLAYER (VIDEO.JS) ---
+    const playErrorSound = () => {
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/911/911-preview.mp3');
+        audio.volume = 0.4;
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(error => console.log("Prohlížeč zablokoval zvuk:", error));
+        }
+    };
+
+    // --- VIDEO PLAYER ---
     const player = videojs('vjs-player', {
         fluid: true,
-        playbackRates: [0.5, 1, 1.5, 2, 3],
+        muted: true,
         controlBar: { children: ['playToggle', 'volumePanel', 'progressControl', 'currentTimeDisplay', 'timeDivider', 'durationDisplay', 'fullscreenToggle'] }
     });
 
-    let isDragging = false, startX, startY, translateX = 0, translateY = 0;
     const modal = document.getElementById('video-modal');
+    const zoomArea = document.getElementById('zoom-area');
+
+    let isDragging = false, startX, startY, translateX = 0, translateY = 0;
+    let currentZoom = 1;
+    const MIN_ZOOM = 1;
+    const MAX_ZOOM = 6;
+
+    const SPEED_STEPS = [0.3, 0.5, 1.0];
+    let currentSpeedIndex = 1; 
 
     function updateTransforms() {
-        const zoom = document.getElementById('zoom-control').value;
         const vjsTech = document.querySelector('.vjs-tech');
-        if (vjsTech) vjsTech.style.transform = `scale(${zoom}) translate(${translateX}px, ${translateY}px)`;
+        document.getElementById('zoom-val').textContent = currentZoom.toFixed(2) + 'x';
+        if (vjsTech) {
+            vjsTech.style.transform = `scale(${currentZoom}) translate(${translateX}px, ${translateY}px)`;
+        }
     }
 
     function resetTransforms() {
         translateX = 0; translateY = 0;
-        document.getElementById('zoom-control').value = 1;
-        document.getElementById('speed-control').value = 1;
-        document.getElementById('zoom-val').textContent = "1.0x";
+        currentZoom = 1;
+        currentSpeedIndex = 1;
+        document.getElementById('zoom-val').textContent = "1.00x";
         document.getElementById('speed-val').textContent = "1.0x";
         player.playbackRate(1.0);
         updateTransforms();
     }
 
-    function updateZoom(val) {
-        document.getElementById('zoom-val').textContent = parseFloat(val).toFixed(1) + 'x';
-        if (parseFloat(val) === 1) { translateX = 0; translateY = 0; }
-        updateTransforms();
+    function stepSpeed(direction) {
+        currentSpeedIndex += direction;
+        if (currentSpeedIndex < 0) currentSpeedIndex = 0;
+        if (currentSpeedIndex >= SPEED_STEPS.length) currentSpeedIndex = SPEED_STEPS.length - 1;
+        
+        const speed = SPEED_STEPS[currentSpeedIndex];
+        player.playbackRate(speed);
+        document.getElementById('speed-val').textContent = speed.toFixed(1) + 'x';
     }
 
-    function updateSpeed(val) {
-        player.playbackRate(parseFloat(val));
-        document.getElementById('speed-val').textContent = parseFloat(val).toFixed(1) + 'x';
-    }
-
+    // --- ZOOM MYŠÍ & TAŽENÍ ---
     player.ready(() => {
         const el = player.tech().el();
+        
+        el.addEventListener('wheel', (e) => {
+            if (e.target.closest('.vjs-control-bar')) return;
+            e.preventDefault();
+
+            if (e.deltaY < 0) {
+                currentZoom += 0.25;
+            } else {
+                currentZoom -= 0.25;
+            }
+
+            if (currentZoom > MAX_ZOOM) currentZoom = MAX_ZOOM;
+            if (currentZoom <= MIN_ZOOM) {
+                resetTransforms();
+            } else {
+                updateTransforms();
+            }
+        }, { passive: false });
+
         el.addEventListener('mousedown', (e) => {
-            if (document.getElementById('zoom-control').value > 1) {
-                isDragging = true; startX = e.clientX - translateX; startY = e.clientY - translateY;
+            if (e.target.closest('.vjs-control-bar')) return;
+            if (currentZoom > 1) {
+                isDragging = true; 
+                startX = e.clientX - translateX; 
+                startY = e.clientY - translateY;
+                if (el) el.style.transition = 'none';
             }
         });
+        
         el.addEventListener('dblclick', resetTransforms);
     });
 
@@ -225,7 +305,63 @@
         translateX = e.clientX - startX; translateY = e.clientY - startY;
         updateTransforms();
     });
-    window.addEventListener('mouseup', () => isDragging = false);
+    
+    window.addEventListener('mouseup', () => {
+        isDragging = false;
+        const el = player.tech() ? player.tech().el() : null;
+        if (el) el.style.transition = 'transform 0.1s ease-out';
+    });
+
+    // --- HAMMER.JS GESTA ---
+    const mc = new Hammer.Manager(zoomArea);
+    const pinch = new Hammer.Pinch();
+    const pan = new Hammer.Pan();
+
+    pinch.recognizeWith(pan);
+    mc.add([pinch, pan]);
+
+    let baseZoom = 1;
+
+    mc.on('pinchstart', () => {
+        baseZoom = currentZoom;
+        const el = player.tech().el();
+        if (el) el.style.transition = 'none';
+    });
+
+    mc.on('pinch', (e) => {
+        currentZoom = baseZoom * e.scale;
+        if (currentZoom < MIN_ZOOM) currentZoom = MIN_ZOOM;
+        if (currentZoom > MAX_ZOOM) currentZoom = MAX_ZOOM;
+        updateTransforms();
+    });
+
+    mc.on('pinchend', () => {
+        if (currentZoom <= MIN_ZOOM) resetTransforms();
+    });
+
+    let startPanX = 0, startPanY = 0;
+    mc.on('panstart', () => {
+        if (currentZoom > 1) {
+            isDragging = true;
+            startPanX = translateX;
+            startPanY = translateY;
+            const el = player.tech().el();
+            if (el) el.style.transition = 'none';
+        }
+    });
+
+    mc.on('panmove', (e) => {
+        if (!isDragging || currentZoom <= 1) return;
+        translateX = startPanX + e.deltaX / currentZoom;
+        translateY = startPanY + e.deltaY / currentZoom;
+        updateTransforms();
+    });
+
+    mc.on('panend', () => {
+        isDragging = false;
+        const el = player.tech().el();
+        if (el) el.style.transition = 'transform 0.1s ease-out';
+    });
 
     async function openVideoModal(id) {
         try {
@@ -233,12 +369,17 @@
             const data = await res.json();
             player.src({ type: 'video/mp4', src: data.video_url });
             modal.classList.remove('hidden');
+            modal.classList.add('flex');
             resetTransforms();
+            player.muted(true); 
             player.play();
         } catch (e) { alert("Chyba při načítání videa."); }
     }
 
-    function closeVideoModal() { modal.classList.add('hidden'); player.pause(); }
+    function closeVideoModal() { 
+        modal.classList.replace('flex', 'hidden'); 
+        player.pause(); 
+    }
 
     window.addEventListener('keydown', (e) => {
         if (modal.classList.contains('hidden')) return;
@@ -246,21 +387,151 @@
         if (e.key === 'Escape') closeVideoModal();
     });
 
-    // --- OSTATNÍ FUNKCE (DELETE, SYNC, THUMB) ---
+    // --- KONTROLA DUPLICITY & UPLOAD ---
+    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const fileInput = document.getElementById('videoFile');
+        if (!fileInput.files.length) return;
+        const file = fileInput.files[0];
+
+        const formData = new FormData(this);
+        const uploadBtn = document.getElementById('uploadText');
+        const spinner = document.getElementById('uploadSpinner');
+        const submitBtn = document.getElementById('submitBtn');
+        
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressPercent = document.getElementById('progressPercent');
+        const progressEta = document.getElementById('progressEta');
+        const progressSpeed = document.getElementById('progressSpeed');
+        
+        uploadBtn.textContent = 'Kontrola databáze...';
+        spinner.classList.remove('hidden');
+        submitBtn.disabled = true;
+        
+        try {
+            const checkResponse = await fetch(`/api/movies/check-exists?filename=${encodeURIComponent(file.name)}`);
+            const checkResult = await checkResponse.json();
+            
+            if (checkResult.exists) {
+                playErrorSound(); 
+                alert("Zamítnuto: " + checkResult.detail);
+                resetUploadForm();
+                return; 
+            }
+
+            uploadBtn.textContent = 'Nahrávám...';
+            progressContainer.classList.remove('hidden');
+            
+            const xhr = new XMLHttpRequest();
+            const startTime = Date.now();
+
+            xhr.upload.onprogress = function(event) {
+                if (event.lengthComputable) {
+                    const loaded = event.loaded;
+                    const total = event.total;
+                    const percentComplete = Math.round((loaded / total) * 100);
+                    
+                    progressBar.style.width = percentComplete + '%';
+                    progressPercent.textContent = percentComplete + '%';
+
+                    const elapsedTime = (Date.now() - startTime) / 1000;
+                    if (elapsedTime > 0) {
+                        const speed = loaded / elapsedTime;
+                        const bytesRemaining = total - loaded;
+                        const secondsRemaining = bytesRemaining / speed;
+
+                        if (speed > 1024 * 1024) {
+                            progressSpeed.textContent = (speed / (1024 * 1024)).toFixed(2) + ' MB/s';
+                        } else {
+                            progressSpeed.textContent = (speed / 1024).toFixed(0) + ' KB/s';
+                        }
+
+                        if (percentComplete === 100) {
+                            progressEta.textContent = 'Zpracování serverem...';
+                            uploadBtn.textContent = 'Zpracování...';
+                        } else if (isFinite(secondsRemaining)) {
+                            const minutes = Math.floor(secondsRemaining / 60);
+                            const seconds = Math.floor(secondsRemaining % 60);
+                            progressEta.textContent = `Zbývá cca: ${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+                        }
+                    }
+                }
+            };
+
+            xhr.onload = function() {
+                let result = {};
+                try { result = JSON.parse(xhr.responseText); } catch(e) {}
+
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    playSuccessSound();
+                    uploadBtn.textContent = 'Hotovo! 🎉';
+                    progressEta.textContent = 'Dokončeno';
+                    setTimeout(() => {
+                        toggleUploadPopup();
+                        progressContainer.classList.add('hidden'); 
+                        window.location.reload();
+                    }, 800);
+                } else {
+                    alert("Chyba: " + (result.detail || "Neznámá chyba při nahrávání"));
+                    resetUploadForm();
+                }
+            };
+
+            xhr.onerror = function() {
+                alert("Nepodařilo se spojit se serverem.");
+                resetUploadForm();
+            };
+
+            xhr.open('POST', '/api/movies/upload');
+            xhr.send(formData);
+
+        } catch (error) {
+            alert("Došlo k neočekávané chybě.");
+            resetUploadForm();
+        }
+
+        function resetUploadForm() {
+            submitBtn.disabled = false;
+            uploadBtn.textContent = 'Nahrát';
+            spinner.classList.add('hidden');
+            progressContainer.classList.add('hidden');
+            progressBar.style.width = '0%';
+            progressPercent.textContent = '0%';
+            progressEta.textContent = 'Zbývá: --:--';
+        }
+    });
+
     async function deleteVideo(filename) {
         if (!confirm(`Smazat video ${filename}?`)) return;
-        const res = await fetch(`/delete/${filename}`, { method: 'POST' });
+        const res = await fetch(`/api/movies/delete/${filename}`, { method: 'POST' });
         if (res.ok) window.location.reload();
     }
-
+    
     async function regenerateThumbnail(filename, id) {
         const btn = document.getElementById(`regenerate-btn-${id}`);
         const thumbImg = document.getElementById(`thumb-${id}`);
+        const loading = document.getElementById(`loading-${id}`);
         btn.classList.add('spin');
-        const res = await fetch(`/regenerate/${filename}`, { method: 'POST' });
-        const data = await res.json();
-        if (data.status === 'success') thumbImg.src = `/${data.thumbnail}?t=${Date.now()}`;
-        btn.classList.remove('spin');
+        if (loading) loading.classList.replace('hidden', 'flex');
+        try {
+            const res = await fetch(`/api/movies/regenerate/${filename}`, { method: 'POST' });
+            const data = await res.json();
+            if (data.status === 'success') {
+                const newUrl = `/${data.thumbnail}?t=${Date.now()}`;
+                const imgLoader = new Image();
+                imgLoader.onload = () => {
+                    thumbImg.src = newUrl;
+                    btn.classList.remove('spin');
+                    if (loading) loading.classList.replace('flex', 'hidden');
+                    playSuccessSound();
+                };
+                imgLoader.src = newUrl;
+            }
+        } catch (e) {
+            btn.classList.remove('spin');
+            if (loading) loading.classList.replace('flex', 'hidden');
+        }
     }
 
     async function syncGallery() {

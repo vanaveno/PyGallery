@@ -3,24 +3,24 @@
 {% block title %}Úvod - ZeroVideo{% endblock %}
 
 {% block content %}
-<div class="text-center py-16">
-    <h1 class="text-4xl font-bold mb-8">Vítejte v ZeroVideo Gallery</h1>
-    <div class="flex space-x-8 justify-center">
+<div class="text-center py-10">
+    <h1 class="text-3xl font-bold mb-16">Vítejte v ZeroVideo Gallery</h1>
+    <div class="lg:flex lg:space-x-8  justify-center">
         <!-- Galerie karta -->
         <div class="w-80 media-card rounded-xl p-8 cursor-pointer" onclick="window.location.href='/gallery/pics'">
             <div class="flex flex-col items-center">
-                <i class="fa-solid fa-photo-film text-8xl text-blue-400 mb-4"></i>
-                <span class="text-2xl font-bold mb-2">Galerie</span>
-                <p class="text-gray-400 text-sm">Prohlédněte si své fotoalba a obrázky</p>
+                <i class="fa-solid fa-photo-film lg:text-8xl text-4xl text-blue-400 mb-4"></i>
+                <span class="lg:text-2xl text-xl font-bold mb-2">Galerie</span>
+               
             </div>
         </div>
 
         <!-- Video karta -->
         <div class="w-80 media-card rounded-xl p-8 cursor-pointer" onclick="window.location.href='/gallery/videos'">
             <div class="flex flex-col items-center">
-                <i class="fa-solid fa-film text-8xl text-green-400 mb-4"></i>
-                <span class="text-2xl font-bold mb-2">Video</span>
-                <p class="text-gray-400 text-sm">Prohlédněte si svá videa a filmy</p>
+                <i class="fa-solid fa-film lg:text-8xl text-4xl  text-green-400 mb-4"></i>
+                <span class="lg:text-2xl text-xl  font-bold mb-2">Video</span>
+               
             </div>
         </div>
     </div>

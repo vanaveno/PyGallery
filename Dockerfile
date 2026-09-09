@@ -1,23 +1,32 @@
-FROM golang:1.21-alpine AS builder
-RUN apk add --no-cache gcc musl-dev
+FROM python:3.11-slim
 
-WORKDIR /app
-# Kopírujeme vše včetně složky vendor
-COPY . .
+# Instalace systémových závislostí (FFmpeg, nástroje pro WebP a curl)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libwebp-dev \
+    webp \
+    curl \
+    ca-certificates \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
 
-# Nechceme nic stahovat, použijeme vendor
-ENV GOFLAGS="-mod=vendor"
-
-# Hned kompilujeme
-RUN CGO_ENABLED=1 GOOS=linux go build -o main .
-
-FROM alpine:latest
-RUN apk add --no-cache ca-certificates tzdata ffmpeg python3 py3-pip curl
+# Instalace nejnovějšího yt-dlp pro stahování videí
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
     chmod a+rx /usr/local/bin/yt-dlp
 
-WORKDIR /root/
-COPY --from=builder /app/main .
-RUN mkdir -p media/movies media/pics
+WORKDIR /app
+
+# 1. Nejdříve zkopírujeme a nainstalujeme requirements (využijeme Docker cache)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 2. Zkopírujeme zbytek zdrojových kódů aplikace
+COPY . .
+
+# Vytvoření potřebných složek, pokud by náhodou chyběly
+RUN mkdir -p movie/thumbnails pics templates
+
 EXPOSE 8001
-CMD ["./main"]
+
+# Spuštění Python aplikace (předpokládám hlavní soubor main.py)
+CMD ["python", "main.py"]

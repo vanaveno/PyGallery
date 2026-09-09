@@ -1,0 +1,11 @@
+# .dockerignore
+media/
+movie/
+thumbnails/
+data/
+*.db
+*.mp4
+*.webp
+venv/
+__pycache__/
+.git

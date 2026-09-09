@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}ZeroVideo Gallery{% endblock %}</title>
+    <title>{% block title %}PyGallery{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <style>
@@ -13,10 +13,10 @@
             gap: 1.5rem;
         }
         .media-card {
-            transition: all 0.3s ease;
-            background: linear-gradient(145deg, #374151, #4B5563);
-            border: 1px solid #4B5563;
-        }
+    transition: all 0.3s ease;
+    background: linear-gradient(to bottom, rgba(88, 28, 135, 0.5), rgba(112, 26, 117, 0.5), rgba(131, 24, 67, 0.5));
+    border: 1px solid #831843;
+}
         .media-card:hover {
             transform: translateY(-5px);
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
@@ -39,19 +39,28 @@
     </style>
     {% block extra_css %}{% endblock %}
 </head>
-<body class="bg-gray-900 text-white min-h-screen flex flex-col">
+<body class="bg-black text-white min-h-screen flex flex-col">
+  
     <!-- Hlavička -->
-    <header class="bg-gray-800 border-b border-gray-700 sticky top-0 z-40">
-        <div class="container mx-auto px-4 py-4">
+    <header class="bg-black sticky top-0 z-40">
+       
+        <div class="border-b border-purple-900/50 bg-fuchsia-900/40  px-6 py-4">
             <div class="flex justify-between items-center">
-                <a href="http://192.168.1.171/" class="text-2xl font-bold text-blue-400 hover:text-blue-300 transition-colors">
-                    <i class="fas fa-play-circle mr-2"></i>ZeroVideo
-                </a>
+                <a href="http://192.168.1.171:8001/" class="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-500 via-fuchsia-500 to-pink-500 hover:text-blue-300 transition-colors">
+    {% if request.url.path == '/gallery/videos' %}
+        <i class="fas fa-film mr-2"></i>Video
+    {% elif request.url.path == '/gallery/pics' %}
+        <i class="fas fa-photo-film mr-2"></i>Galerie
+    {% else %}
+        <i class="fas fa-play-circle mr-2"></i>PyGallery
+    {% endif %}
+</a>
                 <nav class="flex space-x-6">
-                    <a href="/gallery/pics" class="text-gray-300 hover:text-white transition-colors font-medium {% if request.url.path == '/gallery/pics' %}text-white border-b-2 border-blue-500{% endif %}">
-                        <i class="fas fa-photo-film mr-2"></i>Galerie
+                    <a href="/gallery/pics" class="text-gray-300 hover:text-white transition-colors font-medium {% if request.url.path == '/gallery/pics' %}text-pink-300{% endif %}">
+                        <i class="fas fa-photo-film mr-2"></i>
+                        Galerie
                     </a>
-                    <a href="/gallery/videos" class="text-gray-300 hover:text-white transition-colors font-medium {% if request.url.path == '/gallery/videos' %}text-white border-b-2 border-green-500{% endif %}">
+                    <a href="/gallery/videos" class="text-gray-300 hover:text-white transition-colors font-medium {% if request.url.path == '/gallery/videos' %}text-pink-400 {% endif %}">
                         <i class="fas fa-film mr-2"></i>Video
                     </a>
                 </nav>
@@ -60,17 +69,13 @@
     </header>
 
     <!-- Hlavní obsah -->
-    <main class="flex-grow container mx-auto px-4 py-8">
+    <main class="bg-gradient-to-r from-purple-900/50 via-fuchsia-900/50 to-pink-900/50 flex-grow  px-6 py-8">
         {% block content %}{% endblock %}
     </main>
 
     <!-- Patička -->
-    <footer class="bg-gray-800 border-t border-gray-700 py-6">
-        <div class="container mx-auto px-4 text-center">
-            <p class="text-gray-400">
-                &copy; 2024 ZeroVideo Gallery. Všechna práva vyhrazena.
-            </p>
-        </div>
+    <footer class=" py-6">
+  
     </footer>
 
     {% block scripts %}{% endblock %}

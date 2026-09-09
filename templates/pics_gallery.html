@@ -9,31 +9,15 @@
         column-count: 4;
         column-gap: 1.5rem;
     }
-    
-    @media (max-width: 1280px) {
-        .masonry-grid {
-            column-count: 3;
-        }
-    }
-    
-    @media (max-width: 1024px) {
-        .masonry-grid {
-            column-count: 2;
-        }
-    }
-    
-    @media (max-width: 640px) {
-        .masonry-grid {
-            column-count: 1;
-        }
-    }
+    @media (max-width: 1280px) { .masonry-grid { column-count: 3; } }
+    @media (max-width: 1024px) { .masonry-grid { column-count: 2; } }
+    @media (max-width: 640px) { .masonry-grid { column-count: 1; } }
     
     .masonry-item {
         break-inside: avoid;
         margin-bottom: 1.5rem;
     }
     
-    /* Plné náhledy - zachování poměru stran */
     .album-image {
         width: 100%;
         height: auto;
@@ -46,68 +30,36 @@
 <div class="mb-8">
     <div class="flex justify-between items-center">
         <div>
-            <h1 class="text-3xl font-bold mb-2">Foto Alba</h1>
-            <p class="text-gray-400">{{ albums|length }} alb | {{ "%.1f"|format(total_size_gb) }} GB | {{ "%.1f"|format(free_space_gb) }} GB volno</p>
+            <h1 class="text-xl font-bold mb-2">Galerie</h1>
+            <p class="text-gray-400">
+                <span>{{ total_albums_count }}</span> alb | 
+                {{ "%.1f"|format(total_size_gb) }} GB | 
+                {{ "%.1f"|format(free_space_gb) }} GB volno
+            </p>
         </div>
-        <button onclick="syncPics()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors">
-    🔄 Synchronizovat FTP Alba
-</button>
-        <button onclick="openUploadModal()" class="bg-sky-500 hover:bg-sky-700 text-white px-4 py-2 rounded-lg flex items-center transition-colors">
+        <button onclick="syncPics()" class="hidden bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors">
+            🔄 Synchronizovat FTP Alba
+        </button>
+        <button onclick="openUploadModal()" class="bg-sky-500 hover:bg-sky-700 text-white px-4 py-2 rounded-lg lg:flex hidden items-center transition-colors">
             <i class="fas fa-upload mr-2"></i> Nahrát Album
         </button>
     </div>
 </div>
 
-<!-- Masonry Grid -->
-<div class="masonry-grid">
-    {% for album in albums %}
-    <div class="masonry-item">
-        <div class="media-card rounded-xl overflow-hidden group hover:shadow-2xl transition-all duration-300">
-            <a href="/album/{{ album.name }}" class="block">
-                <!-- Celý náhled bez oříznutí -->
-                <div class="relative overflow-hidden">
-                    <img src="{{ album.preview }}" 
-                         alt="{{ album.name }} preview" 
-                         class="album-image group-hover:scale-105 transition duration-500 ease-in-out">
-                    
-                    <!-- Overlay s informacemi - zobrazí se při najetí -->
-                    <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        <!-- Název alba - střed -->
-                        <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center w-full px-4">
-                            <h3 class="text-white font-bold text-xl mb-2 drop-shadow-lg">{{ album.name }}</h3>
-                            <div class="text-white/90 text-sm bg-black/40 rounded-full px-3 py-1 inline-block">
-                                <i class="fas fa-images mr-1"></i>{{ album.count }} fotek
-                            </div>
-                        </div>
-                        
-                        <!-- Počet fotek - roh -->
-                        <div class="absolute top-3 right-3">
-                            <span class="bg-black/70 text-white text-xs px-2 py-1 rounded-full">
-                                {{ album.count }}
-                            </span>
-                        </div>
-                    </div>
-                    
-                    <!-- Základní informace - vždy viditelné -->
-                    <div class="absolute bottom-3 left-3">
-                        <span class="bg-black/60 text-white text-sm px-2 py-1 rounded">
-                            {{ album.count }} fotek
-                        </span>
-                    </div>
-                </div>
-            </a>
-        </div>
-    </div>
-    {% endfor %}
-</div>
+<!-- Dynamic Masonry Grid -->
+<div class="masonry-grid" id="gallery-grid"></div>
 
-{% if not albums %}
-<div class="text-center py-16">
+<!-- Empty state -->
+<div id="empty-state" class="text-center py-16 hidden">
     <i class="fas fa-images text-8xl text-gray-600 mb-4"></i>
     <p class="text-gray-400 text-xl">Zatím žádná alba</p>
     <p class="text-gray-500 mt-2">Vytvořte své první album pomocí tlačítka "Nahrát Album"</p>
 </div>
-{% endif %}
+
+<!-- Sentinel pro IntersectionObserver -->
+<div id="sentinel" class="flex justify-center py-8">
+    <i id="loading-spinner" class="fas fa-circle-notch fa-spin text-3xl text-sky-500"></i>
+</div>
 
 <!-- Upload Modal -->
 <div id="uploadModal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center">
@@ -121,8 +73,8 @@
         <form id="uploadForm" enctype="multipart/form-data">
             <div class="mb-4">
                 <label class="block text-gray-300 mb-2">ZIP soubor s albem</label>
-                <input type="file" name="zip_file" accept=".zip" 
-                       class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
+                <input type="file" name="zip_files" accept=".zip" multiple
+       class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white">
             </div>
             <div class="flex justify-end gap-2">
                 <button type="button" onclick="closeUploadModal()" 
@@ -142,6 +94,102 @@
 
 {% block scripts %}
 <script>
+    let page = 1;
+    const limit = 20;
+    let isLoading = false;
+    let hasMore = true;
+
+    const grid = document.getElementById('gallery-grid');
+    const sentinel = document.getElementById('sentinel');
+    const spinner = document.getElementById('loading-spinner');
+    const emptyState = document.getElementById('empty-state');
+
+    function createAlbumCard(album) {
+        const item = document.createElement('div');
+        item.className = 'masonry-item';
+        
+        const previewSrc = album.preview ? album.preview : '/static/placeholder.webp';
+
+        item.innerHTML = `
+            <div class="media-card rounded-xl overflow-hidden group hover:shadow-2xl transition-all duration-300">
+                <a href="/album/${encodeURIComponent(album.name)}" class="block">
+                    <div class="relative overflow-hidden">
+                        <img src="${previewSrc}" 
+                             alt="${album.name} preview" 
+                             loading="lazy"
+                             class="album-image group-hover:scale-105 transition duration-500 ease-in-out">
+                        
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                            <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center w-full px-4">
+                                <h3 class="text-white font-bold text-xl mb-2 drop-shadow-lg">${album.name}</h3>
+                                <div class="text-white/90 text-sm bg-black/40 rounded-full px-3 py-1 inline-block">
+                                    <i class="fas fa-images mr-1"></i>${album.count} fotek
+                                </div>
+                            </div>
+                            
+                            <div class="absolute top-3 right-3">
+                                <span class="bg-black/70 text-white text-xs px-2 py-1 rounded-full">
+                                    ${album.count}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div class="absolute bottom-3 left-3">
+                            <span class="bg-black/60 text-white text-sm px-2 py-1 rounded">
+                                ${album.count} fotek
+                            </span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+        `;
+        return item;
+    }
+
+    async function loadMoreAlbums() {
+        if (isLoading || !hasMore) return;
+        isLoading = true;
+        spinner.classList.remove('hidden');
+
+        try {
+            const response = await fetch(`/api/pics/albums?page=${page}&limit=${limit}`);
+            if (!response.ok) throw new Error('Chyba při načítání alb');
+            
+            const data = await response.json();
+            
+            if (page === 1 && data.albums.length === 0) {
+                emptyState.classList.remove('hidden');
+                sentinel.classList.add('hidden');
+                return;
+            }
+
+            data.albums.forEach(album => {
+                grid.appendChild(createAlbumCard(album));
+            });
+
+            hasMore = data.has_more;
+            page++;
+
+            if (!hasMore) {
+                sentinel.classList.add('hidden');
+            }
+        } catch (error) {
+            console.error('Error loading albums:', error);
+            showToast('Chyba při načítání dat', 'error');
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    // IntersectionObserver načítá další dávku s předstihem 200px před koncem
+    const observer = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoading) {
+            loadMoreAlbums();
+        }
+    }, { rootMargin: '200px' });
+
+    observer.observe(sentinel);
+
     // Modal functions
     function openUploadModal() {
         document.getElementById('uploadModal').classList.remove('hidden');
@@ -151,30 +199,6 @@
     function closeUploadModal() {
         document.getElementById('uploadModal').classList.add('hidden');
         document.getElementById('uploadModal').classList.remove('flex');
-    }
-
-    // Album deletion
-    async function deleteAlbum(albumName, event) {
-        event.preventDefault();
-        event.stopPropagation();
-        
-        if (!confirm(`Smazat album "${albumName}"? Tuto akci nelze vrátit.`)) return;
-        
-        try {
-            const response = await fetch(`/api/pics/album/${albumName}`, {
-                method: 'DELETE'
-            });
-            
-            if (response.ok) {
-                showToast('Album úspěšně smazáno', 'success');
-                setTimeout(() => window.location.reload(), 1000);
-            } else {
-                throw new Error('Nepodařilo se smazat album');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            showToast('Chyba při mazání alba', 'error');
-        }
     }
 
     // Form submission
@@ -209,7 +233,6 @@
         }
     });
 
-    // Toast notification
     function showToast(message, type) {
         const toast = document.createElement('div');
         toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white ${
@@ -225,47 +248,28 @@
         }, 3000);
     }
 
-    // Optimalizace Masonry layoutu - přidáme načítání obrázků
-    document.addEventListener('DOMContentLoaded', function() {
-        // Přidáme lazy loading pro lepší performance
-        const images = document.querySelectorAll('.album-image');
-        
-        const imageObserver = new IntersectionObserver((entries, observer) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const img = entry.target;
-                    img.src = img.src;
-                    imageObserver.unobserve(img);
-                }
-            });
-        });
+    async function syncPics() {
+        const btn = event.target;
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i> Synchronizuji...';
 
-        images.forEach(img => imageObserver.observe(img));
-    });
-</script>
-<script>
-async function syncPics() {
-    const btn = event.target;
-    const originalText = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i> Synchronizuji...';
+        try {
+            const response = await fetch('/api/pics/sync', { method: 'POST' });
+            const data = await response.json();
 
-    try {
-        const response = await fetch('/api/pics/sync', { method: 'POST' });
-        const data = await response.json();
-
-        if (response.ok) {
-            alert(`Synchronizace hotova! Přidáno ${data.stats.new_images} obrázků.`);
-            location.reload();
-        } else {
-            alert('Chyba při synchronizaci alb.');
+            if (response.ok) {
+                alert(`Synchronizace hotova! Přidáno ${data.stats.new_images} obrázků.`);
+                location.reload();
+            } else {
+                alert('Chyba při synchronizaci alb.');
+            }
+        } catch (error) {
+            alert('Server neodpovídá.');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
         }
-    } catch (error) {
-        alert('Server neodpovídá.');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = originalText;
     }
-}    
 </script>
 {% endblock %}

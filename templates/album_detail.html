@@ -37,12 +37,7 @@
     .lightbox {
         background: rgba(0, 0, 0, 0.95);
         backdrop-filter: blur(5px);
-    }
-    
-    .lightbox-img {
-        max-height: 85vh;
-        max-width: 85vw;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        overflow: hidden; /* Zamezí scrollovaní celé stránky na pozadí */
     }
     
     /* Photo card efekty */
@@ -58,49 +53,31 @@
         border-color: #60A5FA;
     }
 
-        /* Přidejte do extra_css bloku */
-    #image-container {
+    /* Full-screen wrapper pro obrázek (žádný malý omezující box) */
+    .lightbox-wrapper {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none; /* Klikat budeme přímo na obrázek nebo pozadí */
+    }
+
+    /* Samotný obrázek - v základu se celý vejde na obrazovku */
+    .lightbox-img-fluid {
         max-width: 90vw;
-        max-height: 85vh;
-        overflow: auto;
-        cursor: grab;
-    }
-
-    #image-container:active {
-        cursor: grabbing;
-    }
-
-    .lightbox-img {
+        max-height: 90vh;
+        object-fit: contain;
         transform-origin: center center;
-        transition: transform 0.3s ease;
-        max-width: none;
-        max-height: none;
-    }
-
-    /* Skrýt scrollbar pro lepší vzhled */
-    #image-container::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-    }
-
-    #image-container::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 4px;
-    }
-
-    #image-container::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.3);
-        border-radius: 4px;
-    }
-
-    #image-container::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.5);
+        transition: transform 0.25s ease-out;
+        pointer-events: auto;
+        user-select: none;
+        -webkit-user-drag: none;
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- Header -->
 <div class="mb-8">
     <div class="flex justify-between items-start">
         <div>
@@ -111,13 +88,12 @@
             <p class="text-gray-400">{{ photos|length }} fotografií</p>
         </div>
         <button onclick="deleteAlbum()" 
-                class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center transition-colors">
+                class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg lg:flex hidden items-center transition-colors">
             <i class="fas fa-trash mr-2"></i> Smazat Album
         </button>
     </div>
 </div>
 
-<!-- Masonry Photos Grid -->
 <div class="masonry-grid">
     {% for photo in photos %}
     <div class="masonry-item">
@@ -129,27 +105,19 @@
                      class="w-full h-auto object-cover group-hover:scale-105 transition duration-500"
                      loading="lazy">
                 
-                <!-- Overlay s informacemi - zobrazí se při najetí -->
                 <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end">
                     <div class="p-4 w-full">
                         <p class="text-white text-sm font-medium truncate" title="{{ photo.filename }}">
                             {{ photo.filename }}
                         </p>
                         <div class="flex justify-between items-center mt-2">
-                            <span class="text-blue-300 text-xs">
-                                <i class="fas fa-expand mr-1"></i>Klikni pro zvětšení
-                            </span>
-                            <span class="text-gray-300 text-xs">
+                            <div class="text-blue-300 text-lg">
+                                <i class="fas fa-expand mr-1 "></i>Klikni pro zvětšení
+                            </div>
+                            <div class="text-gray-300 text-xs">
                                 {{ loop.index }}/{{ photos|length }}
-                            </span>
+                            </div>
                         </div>
-                    </div>
-                </div>
-                
-                <!-- Zoom ikona - střed -->
-                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div class="bg-black/50 rounded-full p-4 transform scale-0 group-hover:scale-100 transition-transform duration-300">
-                        <i class="fas fa-search-plus text-white text-2xl"></i>
                     </div>
                 </div>
             </div>
@@ -158,18 +126,10 @@
     {% endfor %}
 </div>
 
-{% if not photos %}
-<div class="text-center py-16">
-    <i class="fas fa-images text-8xl text-gray-600 mb-4"></i>
-    <p class="text-gray-400 text-xl">Žádné fotografie v albu</p>
-    <p class="text-gray-500 mt-2">Toto album je prázdné</p>
-</div>
-{% endif %}
+<div id="lightbox" class="fixed inset-0 lightbox hidden items-center justify-center z-50">
+    
+    <div class="absolute inset-0 bg-transparent" onclick="closeLightbox()"></div>
 
-<!-- Lightbox -->
-<!-- Lightbox -->
-<div id="lightbox" class="fixed inset-0 lightbox hidden items-center justify-center z-50 p-4">
-    <!-- Navigační tlačítka -->
     <button id="lightbox-prev" onclick="prevImage()" 
             class="lg:absolute hidden left-4 top-1/2 transform -translate-y-1/2 text-white text-3xl hover:text-blue-300 transition-colors z-10 bg-black/30 rounded-full w-12 h-12 lg:flex items-center justify-center">
         <i class="fas fa-chevron-left"></i>
@@ -180,61 +140,36 @@
         <i class="fas fa-chevron-right"></i>
     </button>
     
-    <!-- Zavření -->
     <button onclick="closeLightbox()" 
-            class="absolute top-4 right-4 text-white text-2xl hover:text-red-300 transition-colors z-10 bg-black/30 rounded-full w-10 h-10 flex items-center justify-center">
+            class="absolute top-4 right-4 text-white text-2xl hover:text-red-300 transition-colors z-20 bg-black/30 rounded-full w-10 h-10 flex items-center justify-center">
         <i class="fas fa-times"></i>
     </button>
     
-    <!-- Informace o obrázku -->
-    <div class="absolute top-4 left-4 text-white z-10 bg-black/30 rounded-lg px-3 py-2">
+    <div class="absolute top-4 left-4 text-white z-20 bg-black/30 rounded-lg px-3 py-2 pointer-events-none">
         <p id="lightbox-filename" class="font-medium"></p>
         <p id="lightbox-counter" class="text-sm text-gray-300"></p>
     </div>
     
-    <!-- Obrázek s zoom funkcí -->
-    <div class="relative w-full h-full flex items-center justify-center">
-        <div class="relative overflow-hidden rounded-lg" id="image-container">
-            <img id="lightbox-img" src="" alt="" 
-                 class="transition-transform duration-300 ease-out cursor-zoom-in"
-                 onclick="handleImageClick(event)">
-            
-            <!-- Overlay indikátory -->
-            <div class="absolute top-0 left-0 w-full h-1/3 bg-gradient-to-b from-transparent to-blue-500/10 opacity-0 hover:opacity-100 transition-opacity cursor-zoom-in"
-                 onclick="zoomIn()"
-                 title="Klikni pro zvětšení">
-                <div class="absolute top-2 right-2 bg-black/50 rounded-full p-2">
-                    <i class="fas fa-search-plus text-white text-sm"></i>
-                </div>
-            </div>
-            
-            <div class="absolute bottom-0 left-0 w-full h-1/3 bg-gradient-to-t from-transparent to-red-500/10 opacity-0 hover:opacity-100 transition-opacity cursor-zoom-out"
-                 onclick="zoomOut()"
-                 title="Klikni pro zmenšení">
-                <div class="absolute bottom-2 right-2 bg-black/50 rounded-full p-2">
-                    <i class="fas fa-search-minus text-white text-sm"></i>
-                </div>
-            </div>
-        </div>
+    <div class="lightbox-wrapper">
+        <img id="lightbox-img" src="" alt="" 
+             class="lightbox-img-fluid cursor-zoom-in"
+             onclick="handleImageClick(event)">
     </div>
     
-    <!-- Zoom controls -->
-    <div class="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 z-10">
-        <button onclick="zoomOut()" 
-                class="bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition-colors">
+    <div class="hidden bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 z-20">
+        <button onclick="zoomOut()" class="bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition-colors">
             <i class="fas fa-search-minus"></i>
         </button>
-        <button onclick="resetZoom()" 
-                class="bg-black/50 text-white px-4 py-2 rounded-lg hover:bg-black/70 transition-colors">
+        <button onclick="resetZoom()" class="bg-black/50 text-white px-4 py-2 rounded-lg hover:bg-black/70 transition-colors">
             100%
         </button>
-        <button onclick="zoomIn()" 
-                class="bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition-colors">
+        <button onclick="zoomIn()" class="bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition-colors">
             <i class="fas fa-search-plus"></i>
         </button>
     </div>
 </div>
 {% endblock %}
+
 
 {% block scripts %}
 <script>
@@ -250,169 +185,228 @@
     ];
 
     let currentZoom = 1;
-const ZOOM_STEP = 0.3;
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 5;
+    let translateX = 0;
+    let translateY = 0;
+    const ZOOM_STEP = 0.25; // Citlivost přiblížení
+    const MIN_ZOOM = 1;
+    const MAX_ZOOM = 6;
 
-function zoomIn() {
-    const img = document.getElementById('lightbox-img');
-    if (!img) return;
-    
-    if (currentZoom < MAX_ZOOM) {
-        currentZoom += ZOOM_STEP;
-        updateZoom();
-    }
-}
+    // Pomocné proměnné pro tažení a swipe
+    let isDragging = false;
+    let startX, startY;
+    let touchStartX = 0;
+    let touchStartY = 0;
 
-function zoomOut() {
-    const img = document.getElementById('lightbox-img');
-    if (!img) return;
-    
-    if (currentZoom > MIN_ZOOM) {
-        currentZoom -= ZOOM_STEP;
-        updateZoom();
-    }
-}
-
-function resetZoom() {
-    currentZoom = 1;
-    updateZoom();
-}
-
-function updateZoom() {
-    const img = document.getElementById('lightbox-img');
-    if (!img) return;
-    
-    img.style.transform = `scale(${currentZoom})`;
-    
-    // Přidání/odstranění třídy podle zoom levelu
-    if (currentZoom > 1) {
-        img.classList.remove('cursor-zoom-in');
-        img.classList.add('cursor-move');
-    } else {
-        img.classList.add('cursor-zoom-in');
-        img.classList.remove('cursor-move');
-    }
-}
-
-function handleImageClick(event) {
-    const img = document.getElementById('lightbox-img');
-    if (!img) return;
-    
-    const rect = img.getBoundingClientRect();
-    const clickY = event.clientY - rect.top;
-    const imageHeight = rect.height;
-    
-    // Kliknutí v horní třetině - zvětšení
-    if (clickY < imageHeight / 3) {
-        zoomIn();
-    }
-    // Kliknutí v dolní třetině - zmenšení
-    else if (clickY > (imageHeight * 2) / 3) {
-        zoomOut();
-    }
-    // Kliknutí ve střední třetině - reset zoomu
-    else {
-        resetZoom();
-    }
-}
-
-// Upravte funkci updateLightbox pro reset zoomu při změně obrázku
-function updateLightbox() {
-    if (images.length === 0) return;
-    
-    const image = images[currentImageIndex];
-    const imgElement = document.getElementById('lightbox-img');
-    imgElement.src = image.original;
-    document.getElementById('lightbox-filename').textContent = image.filename;
-    document.getElementById('lightbox-counter').textContent = `${currentImageIndex + 1} / ${images.length}`;
-    
-    // Reset zoom při změně obrázku
-    resetZoom();
-    
-    // Skrýt/zobrazit navigační tlačítka
-    const prevBtn = document.getElementById('lightbox-prev');
-    const nextBtn = document.getElementById('lightbox-next');
-    
-    if (images.length > 1) {
-        prevBtn.classList.remove('hidden');
-        nextBtn.classList.remove('hidden');
-    } else {
-        prevBtn.classList.add('hidden');
-        nextBtn.classList.add('hidden');
-    }
-}
-
-// Přidejte možnost drag při zoomu
-let isDragging = false;
-let startX, startY, scrollLeft, scrollTop;
-const imageContainer = document.getElementById('image-container');
-
-if (imageContainer) {
-    imageContainer.addEventListener('mousedown', (e) => {
-        const img = document.getElementById('lightbox-img');
-        if (currentZoom > 1) {
-            isDragging = true;
-            startX = e.pageX - imageContainer.offsetLeft;
-            startY = e.pageY - imageContainer.offsetTop;
-            scrollLeft = imageContainer.scrollLeft;
-            scrollTop = imageContainer.scrollTop;
-            img.style.cursor = 'grabbing';
+    function zoomIn() {
+        if (currentZoom < MAX_ZOOM) {
+            currentZoom += ZOOM_STEP;
+            updateTransform();
         }
-    });
+    }
 
-    imageContainer.addEventListener('mouseleave', () => {
-        isDragging = false;
-        const img = document.getElementById('lightbox-img');
-        if (currentZoom > 1) {
-            img.style.cursor = 'move';
+    function zoomOut() {
+        if (currentZoom > MIN_ZOOM) {
+            currentZoom -= ZOOM_STEP;
+            if (currentZoom <= MIN_ZOOM) {
+                resetZoom();
+            } else {
+                updateTransform();
+            }
         }
-    });
+    }
 
-    imageContainer.addEventListener('mouseup', () => {
-        isDragging = false;
+    function resetZoom() {
+        currentZoom = 1;
+        translateX = 0;
+        translateY = 0;
+        updateTransform();
+    }
+
+    function updateTransform() {
         const img = document.getElementById('lightbox-img');
+        if (!img) return;
+        
+        img.style.transform = `translate(${translateX}px, ${translateY}px) scale(${currentZoom})`;
+        
         if (currentZoom > 1) {
-            img.style.cursor = 'move';
+            img.classList.remove('cursor-zoom-in');
+            img.classList.add('cursor-move');
+        } else {
+            img.classList.add('cursor-zoom-in');
+            img.classList.remove('cursor-move');
         }
-    });
+    }
 
-    imageContainer.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        e.preventDefault();
-        const x = e.pageX - imageContainer.offsetLeft;
-        const y = e.pageY - imageContainer.offsetTop;
-        const walkX = (x - startX) * 2;
-        const walkY = (y - startY) * 2;
-        imageContainer.scrollLeft = scrollLeft - walkX;
-        imageContainer.scrollTop = scrollTop - walkY;
-    });
-}
+    // Mobilní Double-Tap (Zvětšení na střed)
+    function handleMobileTapZoom() {
+        if (currentZoom > 1) {
+            resetZoom();
+        } else {
+            currentZoom = 3.0;
+            translateX = 0;
+            translateY = 0;
+            updateTransform();
+        }
+    }
 
-    // Přidejte mousewheel zoom
-    document.getElementById('lightbox').addEventListener('wheel', (e) => {
-        if (e.ctrlKey) {
-            e.preventDefault();
+    // --- INICIALIZACE ELEMENTŮ A UDÁLOSTÍ ---
+    document.addEventListener('DOMContentLoaded', () => {
+        const imgElement = document.getElementById('lightbox-img');
+        if (!imgElement) return;
+
+        // Zamezení zavření lightboxu při kliku na obrázek
+        imgElement.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+
+        // 1. OPRAVENÉ KOLEČKO MYŠI (Navázáno natvrdo na obrázek s pasivním režimem false)
+        imgElement.addEventListener('wheel', (e) => {
+            e.preventDefault(); // Stopne scrollování stránky na pozadí
             if (e.deltaY < 0) {
                 zoomIn();
             } else {
                 zoomOut();
             }
-        }
-    }, { passive: false });
+        }, { passive: false });
 
-    // Lightbox functions
+        // Detekce Double-Tap (Poklepu) na mobilu
+        let lastTap = 0;
+        imgElement.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                const now = new Date().getTime();
+                const timesince = now - lastTap;
+                if ((timesince < 300) && (timesince > 0)) {
+                    e.preventDefault();
+                    handleMobileTapZoom();
+                }
+                lastTap = now;
+            }
+        }, { passive: false });
+
+        // Myš - Začátek tažení
+        imgElement.addEventListener('mousedown', (e) => {
+            if (currentZoom > 1) {
+                isDragging = true;
+                startX = e.clientX - translateX;
+                startY = e.clientY - translateY;
+                imgElement.style.cursor = 'grabbing';
+                imgElement.style.transition = 'none';
+            }
+        });
+
+        // Mobil - Začátek tažení
+        imgElement.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                const touch = e.touches[0];
+                startX = touch.clientX - translateX;
+                startY = touch.clientY - translateY;
+                touchStartX = touch.clientX;
+                touchStartY = touch.clientY;
+                imgElement.style.transition = 'none';
+            }
+        }, { passive: true });
+    });
+
+    // Globální pohyby myši/prstu (mimo rozměr obrázku)
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        translateX = e.clientX - startX;
+        translateY = e.clientY - startY;
+        updateTransform();
+    });
+
+    window.addEventListener('touchmove', (e) => {
+        if (!isDragging || e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        
+        if (currentZoom === 1) return;
+
+        const imgElement = document.getElementById('lightbox-img');
+        const rect = imgElement.getBoundingClientRect();
+        const windowWidth = window.innerWidth;
+
+        const hitLeftEdge = rect.left >= 0 && (touch.clientX - touchStartX) > 0;
+        const hitRightEdge = rect.right <= windowWidth && (touch.clientX - touchStartX) < 0;
+
+        if (!hitLeftEdge && !hitRightEdge) {
+            translateX = touch.clientX - startX;
+            translateY = touch.clientY - startY;
+            updateTransform();
+        }
+    }, { passive: true });
+
+    // Konec tažení (Vyhodnocení swipu na mobilu)
+    const endDrag = (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        
+        const imgElement = document.getElementById('lightbox-img');
+        if (imgElement) {
+            imgElement.style.cursor = 'move';
+            imgElement.style.transition = 'transform 0.25s ease-out';
+        }
+
+        let touchEndX = touchStartX;
+        let touchEndY = touchStartY;
+        
+        if (e.changedTouches && e.changedTouches.length > 0) {
+            touchEndX = e.changedTouches[0].clientX;
+            touchEndY = e.changedTouches[0].clientY;
+        }
+
+        const swipeThresholdX = 60;
+        const swipeThresholdY = 40;
+        const diffX = touchStartX - touchEndX;
+        const diffY = Math.abs(touchStartY - touchEndY);
+
+        if (Math.abs(diffX) > swipeThresholdX && diffY < swipeThresholdY && imgElement) {
+            const rect = imgElement.getBoundingClientRect();
+            const windowWidth = window.innerWidth;
+
+            if (currentZoom === 1 || rect.left >= -5 || rect.right <= windowWidth + 5) {
+                if (diffX > 0) nextImage(); else prevImage();
+            }
+        }
+    };
+
+    window.addEventListener('mouseup', endDrag);
+    window.addEventListener('touchend', endDrag);
+
+    // Správa stavu Lightboxu
+    function updateLightbox() {
+        if (images.length === 0) return;
+        
+        const image = images[currentImageIndex];
+        const imgElement = document.getElementById('lightbox-img');
+        imgElement.src = image.original;
+        document.getElementById('lightbox-filename').textContent = image.filename;
+        document.getElementById('lightbox-counter').textContent = `${currentImageIndex + 1} / ${images.length}`;
+        
+        resetZoom();
+        
+        const prevBtn = document.getElementById('lightbox-prev');
+        const nextBtn = document.getElementById('lightbox-next');
+        const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+        if (images.length > 1 && !isTouchDevice) {
+            prevBtn.classList.remove('hidden');
+            nextBtn.classList.remove('hidden');
+        } else {
+            prevBtn.classList.add('hidden');
+            nextBtn.classList.add('hidden');
+        }
+    }
+
     function openLightbox(imageUrl, filename, index) {
         currentImageIndex = index;
         updateLightbox();
         document.getElementById('lightbox').classList.remove('hidden');
-        document.getElementById('lightbox').classList.add('flex');
         document.body.style.overflow = 'hidden';
     }
 
     function closeLightbox() {
         document.getElementById('lightbox').classList.add('hidden');
-        document.getElementById('lightbox').classList.remove('flex');
         document.body.style.overflow = 'auto';
     }
 
@@ -428,28 +422,7 @@ if (imageContainer) {
         updateLightbox();
     }
 
-    function updateLightbox() {
-        if (images.length === 0) return;
-        
-        const image = images[currentImageIndex];
-        document.getElementById('lightbox-img').src = image.original;
-        document.getElementById('lightbox-filename').textContent = image.filename;
-        document.getElementById('lightbox-counter').textContent = `${currentImageIndex + 1} / ${images.length}`;
-        
-        // Skrýt/zobrazit navigační tlačítka podle počtu obrázků
-        const prevBtn = document.getElementById('lightbox-prev');
-        const nextBtn = document.getElementById('lightbox-next');
-        
-       /* if (images.length <= 1) {
-            prevBtn.style.display = 'none';
-            nextBtn.style.display = 'none';
-        } else {
-            prevBtn.style.display = 'flex';
-            nextBtn.style.display = 'flex';
-        }*/
-    }
-
-    // Keyboard navigation
+    // Klávesnice pro PC
     document.addEventListener('keydown', (e) => {
         if (!document.getElementById('lightbox').classList.contains('hidden')) {
             if (e.key === 'Escape') closeLightbox();
@@ -458,20 +431,14 @@ if (imageContainer) {
         }
     });
 
-    // Album deletion
+    // Smazání alba
     async function deleteAlbum() {
         if (!confirm('Smazat celé album "{{ album_name }}"? Tuto akci nelze vrátit.')) return;
-        
         try {
-            const response = await fetch(`/api/pics/album/{{ album_name }}`, {
-                method: 'DELETE'
-            });
-            
+            const response = await fetch(`/api/pics/album/{{ album_name }}`, { method: 'DELETE' });
             if (response.ok) {
                 showToast('Album úspěšně smazáno', 'success');
-                setTimeout(() => {
-                    window.location.href = '/gallery/pics';
-                }, 1000);
+                setTimeout(() => { window.location.href = '/gallery/pics'; }, 1000);
             } else {
                 throw new Error('Nepodařilo se smazat album');
             }
@@ -481,15 +448,12 @@ if (imageContainer) {
         }
     }
 
-    // Toast notification
+    // Toasty
     function showToast(message, type) {
         const toast = document.createElement('div');
-        toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white ${
-            type === 'success' ? 'bg-green-500' : 'bg-red-500'
-        } animate-fade-in`;
+        toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-500' : 'bg-red-500'} animate-fade-in`;
         toast.textContent = message;
         document.body.appendChild(toast);
-        
         setTimeout(() => {
             toast.classList.remove('animate-fade-in');
             toast.classList.add('animate-fade-out');
@@ -497,36 +461,9 @@ if (imageContainer) {
         }, 3000);
     }
 
-    // Swipe support for mobile
-    let touchStartX = 0;
-    let touchEndX = 0;
-
-    document.getElementById('lightbox').addEventListener('touchstart', e => {
-        touchStartX = e.changedTouches[0].screenX;
-    });
-
-    document.getElementById('lightbox').addEventListener('touchend', e => {
-        touchEndX = e.changedTouches[0].screenX;
-        handleSwipe();
-    });
-
-    function handleSwipe() {
-        const swipeThreshold = 50;
-        const diff = touchStartX - touchEndX;
-
-        if (Math.abs(diff) > swipeThreshold) {
-            if (diff > 0) {
-                nextImage(); // Swipe left
-            } else {
-                prevImage(); // Swipe right
-            }
-        }
-    }
-
-    // Lazy loading pro lepší performance
+    // Lazy loading
     document.addEventListener('DOMContentLoaded', function() {
         const images = document.querySelectorAll('.photo-card img');
-        
         const imageObserver = new IntersectionObserver((entries, observer) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
@@ -536,7 +473,6 @@ if (imageContainer) {
                 }
             });
         });
-
         images.forEach(img => imageObserver.observe(img));
     });
 </script>
